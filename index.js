@@ -31,11 +31,11 @@ dotenv.config();
 
 const app = express();
 app.use(express.json());
-// app.use(cors({
-//   origin: process.env.CLIENT_URL || "*",
-//   credentials: true
-// }));
- app.use(cors())
+app.use(cors({
+  origin: process.env.CLIENT_URL || "*",
+  credentials: true
+}));
+//  app.use(cors())
 
 
 app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
@@ -105,7 +105,7 @@ app.get("/api/me", authMiddleware, async (req, res) => {
 });
 
 app.get("/api/check",async(req,res)=> {
-      res.status(500).json({ success: true, message: "Backend is running" });
+      res.status(200).json({ success: true, message: "Backend is running" });
 
 })
 // --------------------
