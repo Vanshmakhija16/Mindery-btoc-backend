@@ -1,6 +1,7 @@
 import express from "express";
 import User from "../models/User.js";
 import Report from "../models/Report.js";
+import Assessment from "../models/Assessment.js";
 
 const router = express.Router();
 
@@ -814,64 +815,186 @@ const assessments = [
 
 ];
 
-const authMiddleware = (req, res, next) => {
+// const authMiddleware = (req, res, next) => {
+//   const token = req.headers.authorization?.split(" ")[1]; // Bearer <token>
+//   if (!token) return res.status(401).json({ success: false, message: "No token provided" });
+
+//   try {
+//     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+//     req.userId = decoded.id || decoded._id;
+//     req.userRole = (decoded.role || "").toLowerCase();
+//     next();
+//   } catch (err) {
+//     return res.status(403).json({ success: false, message: "Invalid or expired token" });
+//   }
+// };
+
+import jwt from "jsonwebtoken";
+
+// export const authMiddleware = (req, res, next) => {
+//   const token = req.headers.authorization?.split(" ")[1]; // Bearer <token>
+//   if (!token)
+//     return res.status(401).json({ success: false, message: "No token provided" });
+
+//   try {
+//     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+//     req.userId = decoded.id || decoded._id;
+//     req.userRole = (decoded.role || "").toLowerCase();
+//     req.user = decoded; // <-- added so req.user.role works everywhere
+
+//     next();
+//   } catch (err) {
+//     return res
+//       .status(403)
+//       .json({ success: false, message: "Invalid or expired token" });
+//   }
+// };
+
+// // Routes
+// router.get("/", (req, res) => {
+//   res.json(
+//     assessments.map((a) => ({
+//       id: a.id,
+//       title: a.title,
+//       slug: a.slug,
+//       description: a.description,
+//       category: a.category,
+//       itemCount: a.questions.length
+//     }))
+//   );
+// });
+
+// ----------------- Part 1: authMiddleware -----------------
+export const authMiddleware = (req, res, next) => {
   const token = req.headers.authorization?.split(" ")[1]; // Bearer <token>
-  if (!token) return res.status(401).json({ success: false, message: "No token provided" });
+  if (!token)
+    return res.status(401).json({ success: false, message: "No token provided" });
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
     req.userId = decoded.id || decoded._id;
     req.userRole = (decoded.role || "").toLowerCase();
+    req.user = decoded; // make decoded available
+
     next();
   } catch (err) {
-    return res.status(403).json({ success: false, message: "Invalid or expired token" });
+    return res
+      .status(403)
+      .json({ success: false, message: "Invalid or expired token" });
   }
 };
 
-// Routes
-router.get("/", (req, res) => {
-  res.json(
-    assessments.map((a) => ({
+
+// router.get("/", async (req, res) => {
+//   try {
+//     const all = await Assessment.find({}, "id title slug description category questions").lean();
+//     // return same shape as before
+//     const result = all.map(a => ({
+//       id: a.id,
+//       title: a.title,
+//       slug: a.slug,
+//       description: a.description,
+//       category: a.category,
+//       itemCount: (a.questions || []).length,
+//     }));
+//     res.json(result);
+//   } catch (err) {
+//     console.error("Error fetching assessments:", err);
+//     res.status(500).json({ error: "Server error" });
+//   }
+// });
+
+
+
+
+// Get assigned assessments of a student
+// router.get("/my", authMiddleware, async (req, res) => {
+//   console.log("Hit")
+//   try {
+//     const student = await User.findById(req.userId); // <-- use logged-in user
+//     if (!student || student.role !== "student") {
+//       return res.status(404).json({ error: "Student not found or not a student" });
+//     }
+
+//     const detailed = (student.assessments || []).map((a) => {
+//       const meta = assessments.find((m) => m.id === a.assessmentId);
+//       return {
+//         assessmentId: a.assessmentId,
+//         status: a.status,
+//         assignedAt: a.assignedAt,
+//         title: meta?.title,
+//         slug: meta?.slug,
+//         description: meta?.description
+//       };
+//     });
+
+//     res.json(detailed);
+//   } catch (err) {
+//     res.status(500).json({ error: err.message });
+//   }
+// });
+
+// ----------------- Part 2: GET / -----------------
+router.get("/", async (req, res) => {
+  try {
+    const all = await Assessment.find({}, "id title slug description category questions").lean();
+    const result = all.map(a => ({
       id: a.id,
       title: a.title,
       slug: a.slug,
       description: a.description,
       category: a.category,
-      itemCount: a.questions.length
-    }))
-  );
-});
-// Get assigned assessments of a student
-router.get("/my", authMiddleware, async (req, res) => {
-  console.log("Hit")
-  try {
-    const student = await User.findById(req.userId); // <-- use logged-in user
-    if (!student || student.role !== "student") {
-      return res.status(404).json({ error: "Student not found or not a student" });
-    }
-
-    const detailed = (student.assessments || []).map((a) => {
-      const meta = assessments.find((m) => m.id === a.assessmentId);
-      return {
-        assessmentId: a.assessmentId,
-        status: a.status,
-        assignedAt: a.assignedAt,
-        title: meta?.title,
-        slug: meta?.slug,
-        description: meta?.description
-      };
-    });
-
-    res.json(detailed);
+      itemCount: (a.questions || []).length,
+    }));
+    res.json(result);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("Error fetching assessments:", err);
+    res.status(500).json({ error: "Server error" });
   }
 });
-router.get("/:slug", (req, res) => {
-  const assessment = assessments.find((a) => a.slug === req.params.slug);
-  if (!assessment) return res.status(404).json({ error: "Assessment not found" });
-  res.json(assessment);
-});
+
+
+// router.get("/my", authMiddleware, async (req, res) => {
+//   try {
+//     const student = await User.findById(req.userId);
+//     if (!student || student.role !== "student") {
+//       return res.status(404).json({ error: "Student not found or not a student" });
+//     }
+
+//     const assigned = student.assessments || []; // [{ assessmentId, status, assignedAt }, ...]
+//     const ids = assigned.map(a => a.assessmentId);
+
+//     // fetch metadata for all assigned IDs at once
+//     const metas = await Assessment.find({ id: { $in: ids } }, "id title slug description").lean();
+//     const metaMap = Object.fromEntries(metas.map(m => [m.id, m]));
+
+//     const detailed = assigned.map(a => {
+//       const meta = metaMap[a.assessmentId];
+//       return {
+//         assessmentId: a.assessmentId,
+//         status: a.status,
+//         assignedAt: a.assignedAt,
+//         title: meta?.title,
+//         slug: meta?.slug,
+//         description: meta?.description
+//       };
+//     });
+
+//     res.json(detailed);
+//   } catch (err) {
+//     console.error(err);
+//     res.status(500).json({ error: err.message });
+//   }
+// });
+
+
+// router.get("/:slug", (req, res) => {
+//   const assessment = assessments.find((a) => a.slug === req.params.slug);
+//   if (!assessment) return res.status(404).json({ error: "Assessment not found" });
+//   res.json(assessment);
+// });
 
 // router.get("/:slug", async (req, res) => {
 //   try {
@@ -911,178 +1034,432 @@ router.get("/:slug", (req, res) => {
 // ------------------------------
 // UNIVERSAL ASSESSMENT SUBMIT
 // ------------------------------
+
+// GET /api/assessments/:slug
+
+
+// ----------------- Part 3: GET /my -----------------
+router.get("/my", authMiddleware, async (req, res) => {
+  try {
+    const student = await User.findById(req.userId);
+    if (!student || student.role !== "student") {
+      return res.status(404).json({ error: "Student not found or not a student" });
+    }
+
+    const assigned = student.assessments || []; // array of { assessmentId, status, assignedAt }
+    const ids = assigned.map(a => a.assessmentId);
+
+    // fetch metadata for assigned assessments
+    const metas = await Assessment.find({ id: { $in: ids } }, "id title slug description").lean();
+    const metaMap = Object.fromEntries(metas.map(m => [m.id, m]));
+
+    const detailed = assigned.map(a => {
+      const meta = metaMap[a.assessmentId];
+      return {
+        assessmentId: a.assessmentId,
+        status: a.status,
+        assignedAt: a.assignedAt,
+        title: meta?.title,
+        slug: meta?.slug,
+        description: meta?.description
+      };
+    });
+
+    res.json(detailed);
+  } catch (err) {
+    console.error("Error in /my:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// router.get("/:slug", async (req, res) => {
+//   try {
+//     const assessment = await Assessment.findOne({ slug: req.params.slug }).lean();
+//     if (!assessment) return res.status(404).json({ error: "Assessment not found" });
+//     res.json(assessment);
+//   } catch (err) {
+//     console.error("Error fetching assessment:", err);
+//     res.status(500).json({ error: "Server error" });
+//   }
+// });
+
+// ----------------- Part 4: GET /:slug -----------------
+router.get("/:slug", async (req, res) => {
+  try {
+    const assessment = await Assessment.findOne({ slug: req.params.slug }).lean();
+    if (!assessment) return res.status(404).json({ error: "Assessment not found" });
+    res.json(assessment);
+  } catch (err) {
+    console.error("Error fetching assessment:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+
+
+// router.post("/:slug/submit", async (req, res) => {
+//   try {
+
+//       const assessment = await Assessment.findOne({ slug: req.params.slug }).lean();
+//       if (!assessment)
+//         return res.status(404).json({ error: "Assessment not found" });
+
+
+//     const { answers } = req.body || {};
+//     if (!answers)
+//       return res.status(400).json({ error: "Answers are required" });
+
+//     let totalScore = 0;
+//     const unanswered = [];
+
+//     // ⚡ Build quick lookup map for efficiency
+//     const questionMap = Object.fromEntries(
+//       assessment.questions.map((q) => [q.id, q])
+//     );
+
+//     // ⚙️ Step 1: Reverse-scoring configuration
+//     let reverseItems = [];
+//     let reverseMax = 3; // default max (used for SQS, can be 4 for PSS)
+
+//     switch (assessment.slug) {
+//       case "pss":
+//         reverseItems = ["q4", "q5", "q7", "q8"];
+//         reverseMax = 4;
+//         break;
+//       case "sleep":
+//         reverseItems = [
+//           "q6",
+//           "q7",
+//           "q8",
+//           "q9",
+//           "q24",
+//           "q25",
+//           "q26",
+//           "q27",
+//           "q28",
+//         ];
+//         reverseMax = 3;
+//         break;
+//       default:
+//         reverseItems = [];
+//     }
+
+//     const reverse = (value, max = reverseMax) => max - value;
+
+//     // 🧮 Step 2: Compute total score
+//     for (const q of assessment.questions) {
+//       const givenAnswer = answers?.[q.id];
+//       if (givenAnswer == null) {
+//         unanswered.push(q.id);
+//         continue;
+//       }
+//       let weight = q.optionsWithWeights?.[givenAnswer] ?? 0;
+//       if (reverseItems.includes(q.id)) {
+//         weight = reverse(weight);
+//       }
+//       totalScore += weight;
+//     }
+
+//     // 🧠 Step 3: Domain grouping per assessment
+//     let domainMap = {};
+
+//     switch (assessment.slug) {
+//       // ✅ Beck Depression Inventory (BDI)
+//       case "bdi":
+//         domainMap = {
+//           cognitive: [
+//             "q1",
+//             "q2",
+//             "q3",
+//             "q5",
+//             "q6",
+//             "q7",
+//             "q8",
+//             "q9",
+//             "q13",
+//             "q14",
+//           ],
+//           behavioral: ["q4", "q10", "q11", "q12", "q15"],
+//           somatic: ["q16", "q17", "q18", "q19", "q20", "q21"],
+//         };
+//         break;
+
+//       // ✅ GAD-7
+//       case "gad7":
+//         domainMap = {
+//           cognitive: ["q2", "q3", "q7"],
+//           physical: ["q4", "q5"],
+//           emotional: ["q1", "q6"],
+//         };
+//         break;
+
+//       // ✅ Perceived Stress Scale (PSS)
+//       case "pss":
+//         domainMap = {
+//           helplessness: ["q1", "q2", "q3", "q6", "q9", "q10"],
+//           self_efficacy: ["q4", "q5", "q7", "q8"],
+//         };
+//         break;
+
+//       // ✅ WHO-5 (conceptual domains for visualization)
+//       case "who5":
+//         domainMap = {
+//           positive_mood: ["q1"],
+//           relaxation_calmness: ["q2"],
+//           energy_vitality: ["q3"],
+//           restorative_sleep: ["q4"],
+//           engagement_interest: ["q5"],
+//         };
+//         break;
+
+//       // ✅ Sleep Quality Scale (SQS)
+//       case "sleep":
+//         domainMap = {
+//           daytime_symptoms: ["q1", "q2", "q3", "q4", "q5"],
+//           restoration_after_sleep: ["q6", "q7", "q8", "q9"],
+//           problems_initiating_sleep: ["q10", "q11", "q12", "q13", "q14"],
+//           problems_maintaining_sleep: ["q15", "q16", "q17", "q18", "q19"],
+//           difficulty_waking: ["q20", "q21", "q22", "q23"],
+//           sleep_satisfaction: ["q24", "q25", "q26", "q27", "q28"],
+//         };
+//         break;
+
+//       default:
+//         domainMap = {};
+//     }
+
+//     // 📊 Step 4: Compute domain scores
+//     const domainScores = {};
+//     for (const [domain, ids] of Object.entries(domainMap)) {
+//       domainScores[domain] = ids.reduce((sum, id) => {
+//         const givenAnswer = answers?.[id];
+//         const q = questionMap[id];
+//         if (!q) return sum;
+//         let weight = q.optionsWithWeights?.[givenAnswer] ?? 0;
+//         if (reverseItems.includes(id)) weight = reverse(weight);
+//         return sum + weight;
+//       }, 0);
+//     }
+
+//     // ⚖️ Step 5: Scoring and percentage
+//     const scoringFn =
+//       assessment.scoring ||
+//       (() => ({
+//         status: "Unknown",
+//         message: "Scoring function not defined.",
+//       }));
+
+//     const { status, message } = scoringFn(totalScore);
+//     const percentage = assessment.maxScore
+//       ? Math.round((totalScore / assessment.maxScore) * 100)
+//       : 0;
+
+//     // 💾 Step 6: Save report to MongoDB
+
+//     const newReport = new Report({
+//   userEmail: req.body.userEmail,
+//   userName: req.body.userName,
+//       assessmentSlug: assessment.slug,
+//       assessmentTitle: assessment.title,
+//       score: totalScore,
+//       maxScore: assessment.maxScore,
+//       percentage,
+//       status,
+//       message,
+//       domainScores,
+//     });
+
+
+
+//     await newReport.save();
+//     console.log(`✅ ${assessment.title} report saved successfully.`);
+
+//     // 🚀 Step 7: Respond to frontend
+//     res.json({
+//       score: totalScore,
+//       maxScore: assessment.maxScore,
+//       percentage,
+//       report: `${totalScore} / ${assessment.maxScore}`,
+//       status,
+//       message,
+//       unanswered,
+//       domainScores, // for frontend charts (bar/pie/radar)
+//     });
+//   } catch (err) {
+//     console.error("❌ Error submitting assessment:", err);
+//     res
+//       .status(500)
+//       .json({ error: "Internal Server Error", details: err.message });
+//   }
+// });
+
+
+// ----------------- Part 5: POST /:slug/submit -----------------
 router.post("/:slug/submit", async (req, res) => {
   try {
-    const assessment = assessments.find((a) => a.slug === req.params.slug);
+    const assessment = await Assessment.findOne({ slug: req.params.slug }).lean();
     if (!assessment)
       return res.status(404).json({ error: "Assessment not found" });
 
-    const { answers } = req.body || {};
-    if (!answers)
-      return res.status(400).json({ error: "Answers are required" });
+    const { answers, userEmail, userName } = req.body || {};
+    if (!answers) return res.status(400).json({ error: "Answers are required" });
 
-    let totalScore = 0;
-    const unanswered = [];
+    // build map
+    const questionMap = Object.fromEntries((assessment.questions || []).map(q => [q.id, q]));
 
-    // ⚡ Build quick lookup map for efficiency
-    const questionMap = Object.fromEntries(
-      assessment.questions.map((q) => [q.id, q])
-    );
-
-    // ⚙️ Step 1: Reverse-scoring configuration
+    // reverse scoring config
     let reverseItems = [];
-    let reverseMax = 3; // default max (used for SQS, can be 4 for PSS)
-
+    let reverseMax = 3;
     switch (assessment.slug) {
       case "pss":
         reverseItems = ["q4", "q5", "q7", "q8"];
         reverseMax = 4;
         break;
       case "sleep":
+      case "sqs":
         reverseItems = [
-          "q6",
-          "q7",
-          "q8",
-          "q9",
-          "q24",
-          "q25",
-          "q26",
-          "q27",
-          "q28",
+          "q6","q7","q8","q9","q24","q25","q26","q27","q28"
         ];
         reverseMax = 3;
         break;
       default:
         reverseItems = [];
     }
-
     const reverse = (value, max = reverseMax) => max - value;
 
-    // 🧮 Step 2: Compute total score
-    for (const q of assessment.questions) {
-      const givenAnswer = answers?.[q.id];
-      if (givenAnswer == null) {
+    // compute total
+    let totalScore = 0;
+    const unanswered = [];
+    for (const q of (assessment.questions || [])) {
+      const given = answers?.[q.id];
+      if (given == null) {
         unanswered.push(q.id);
         continue;
       }
-      let weight = q.optionsWithWeights?.[givenAnswer] ?? 0;
-      if (reverseItems.includes(q.id)) {
-        weight = reverse(weight);
-      }
+      let weight = q.optionsWithWeights?.[given] ?? 0;
+      if (reverseItems.includes(q.id)) weight = reverse(weight);
       totalScore += weight;
     }
 
-    // 🧠 Step 3: Domain grouping per assessment
+    // compute domain scores similar to old switch
     let domainMap = {};
-
     switch (assessment.slug) {
-      // ✅ Beck Depression Inventory (BDI)
       case "bdi":
         domainMap = {
-          cognitive: [
-            "q1",
-            "q2",
-            "q3",
-            "q5",
-            "q6",
-            "q7",
-            "q8",
-            "q9",
-            "q13",
-            "q14",
-          ],
-          behavioral: ["q4", "q10", "q11", "q12", "q15"],
-          somatic: ["q16", "q17", "q18", "q19", "q20", "q21"],
+          cognitive: ["q1","q2","q3","q5","q6","q7","q8","q9","q13","q14"],
+          behavioral: ["q4","q10","q11","q12","q15"],
+          somatic: ["q16","q17","q18","q19","q20","q21"]
         };
         break;
-
-      // ✅ GAD-7
       case "gad7":
         domainMap = {
-          cognitive: ["q2", "q3", "q7"],
-          physical: ["q4", "q5"],
-          emotional: ["q1", "q6"],
+          cognitive: ["q2","q3","q7"],
+          physical: ["q4","q5"],
+          emotional: ["q1","q6"]
         };
         break;
-
-      // ✅ Perceived Stress Scale (PSS)
       case "pss":
         domainMap = {
-          helplessness: ["q1", "q2", "q3", "q6", "q9", "q10"],
-          self_efficacy: ["q4", "q5", "q7", "q8"],
+          helplessness: ["q1","q2","q3","q6","q9","q10"],
+          self_efficacy: ["q4","q5","q7","q8"]
         };
         break;
-
-      // ✅ WHO-5 (conceptual domains for visualization)
       case "who5":
         domainMap = {
           positive_mood: ["q1"],
           relaxation_calmness: ["q2"],
           energy_vitality: ["q3"],
           restorative_sleep: ["q4"],
-          engagement_interest: ["q5"],
+          engagement_interest: ["q5"]
         };
         break;
-
-      // ✅ Sleep Quality Scale (SQS)
       case "sleep":
+      case "sqs":
         domainMap = {
-          daytime_symptoms: ["q1", "q2", "q3", "q4", "q5"],
-          restoration_after_sleep: ["q6", "q7", "q8", "q9"],
-          problems_initiating_sleep: ["q10", "q11", "q12", "q13", "q14"],
-          problems_maintaining_sleep: ["q15", "q16", "q17", "q18", "q19"],
-          difficulty_waking: ["q20", "q21", "q22", "q23"],
-          sleep_satisfaction: ["q24", "q25", "q26", "q27", "q28"],
+          daytime_symptoms: ["q1","q2","q3","q4","q5"],
+          restoration_after_sleep: ["q6","q7","q8","q9"],
+          problems_initiating_sleep: ["q10","q11","q12","q13","q14"],
+          problems_maintaining_sleep: ["q15","q16","q17","q18","q19"],
+          difficulty_waking: ["q20","q21","q22","q23"],
+          sleep_satisfaction: ["q24","q25","q26","q27","q28"]
         };
         break;
-
       default:
         domainMap = {};
     }
 
-    // 📊 Step 4: Compute domain scores
+    // domain scores
     const domainScores = {};
     for (const [domain, ids] of Object.entries(domainMap)) {
       domainScores[domain] = ids.reduce((sum, id) => {
-        const givenAnswer = answers?.[id];
+        const given = answers?.[id];
         const q = questionMap[id];
         if (!q) return sum;
-        let weight = q.optionsWithWeights?.[givenAnswer] ?? 0;
+        let weight = q.optionsWithWeights?.[given] ?? 0;
         if (reverseItems.includes(id)) weight = reverse(weight);
         return sum + weight;
       }, 0);
     }
 
-    // ⚖️ Step 5: Scoring and percentage
-    const scoringFn =
-      assessment.scoring ||
-      (() => ({
-        status: "Unknown",
-        message: "Scoring function not defined.",
-      }));
+    // scoring function fallback — replicate known interpretations
+    const interpret = (slug, score) => {
+      switch (slug) {
+        case "bdi":
+          if (score <= 10) return { status: "Normal", message: "These ups and downs are considered normal." };
+          if (score <= 16) return { status: "Mild Mood Disturbance", message: "Mild mood disturbance." };
+          if (score <= 20) return { status: "Borderline Clinical Depression", message: "Borderline clinical depression." };
+          if (score <= 30) return { status: "Moderate Depression", message: "Moderate depression." };
+          if (score <= 40) return { status: "Severe Depression", message: "Severe depression." };
+          return { status: "Extreme Depression", message: "Extreme depression — please seek professional help." };
+        case "gad7":
+          if (score <= 4) return { status: "Minimal Anxiety", message: "Minimal anxiety." };
+          if (score <= 9) return { status: "Mild Anxiety", message: "Mild anxiety." };
+          if (score <= 14) return { status: "Moderate Anxiety", message: "Moderate anxiety." };
+          return { status: "Severe Anxiety", message: "Severe anxiety — consider professional consultation." };
+        case "pss":
+          if (score <= 13) return { status: "Low Stress", message: "Your stress level is low." };
+          if (score <= 26) return { status: "Moderate Stress", message: "You have moderate stress." };
+          return { status: "High Stress", message: "You have high perceived stress." };
+        case "who5": {
+          const percent = assessment.maxScore ? Math.round((score / assessment.maxScore) * 100) : score * 4;
+          let interpretation = "";
+          if (percent <= 40) interpretation = "Low well-being";
+          else if (percent <= 60) interpretation = "Moderate well-being";
+          else interpretation = "High well-being";
+          return { status: `${percent}%`, message: interpretation };
+        }
+        case "sleep":
+        case "sqs":
+          if (score <= 20) return { status: "Good Sleep Quality", message: "Your sleep quality is good." };
+          if (score <= 50) return { status: "Moderate Sleep Problems", message: "You have moderate sleep issues." };
+          return { status: "Poor Sleep Quality", message: "Your sleep quality is poor — consider consulting a professional." };
+        default:
+          return { status: "Unknown", message: "Scoring not defined." };
+      }
+    };
 
-    const { status, message } = scoringFn(totalScore);
-    const percentage = assessment.maxScore
-      ? Math.round((totalScore / assessment.maxScore) * 100)
-      : 0;
+    const { status, message } = interpret(assessment.slug, totalScore);
+    const percentage = assessment.maxScore ? Math.round((totalScore / assessment.maxScore) * 100) : 0;
 
-    // 💾 Step 6: Save report to MongoDB
+    // create report document (use field names expected by Report schema)
     const newReport = new Report({
+      userEmail: userEmail || req.body.email || "unknown",
+      userName: userName || req.body.name || "Guest",
       assessmentSlug: assessment.slug,
       assessmentTitle: assessment.title,
       score: totalScore,
-      maxScore: assessment.maxScore,
+      maxScore: assessment.maxScore || 0,
       percentage,
       status,
       message,
-      domainScores,
+      domainScores
     });
 
     await newReport.save();
-    console.log(`✅ ${assessment.title} report saved successfully.`);
 
-    // 🚀 Step 7: Respond to frontend
+    // respond with same shape your frontend uses (report data + metadata)
     res.json({
+      _id: newReport._id,
       score: totalScore,
       maxScore: assessment.maxScore,
       percentage,
@@ -1090,108 +1467,211 @@ router.post("/:slug/submit", async (req, res) => {
       status,
       message,
       unanswered,
-      domainScores, // for frontend charts (bar/pie/radar)
+      domainScores
     });
   } catch (err) {
-    console.error("❌ Error submitting assessment:", err);
-    res
-      .status(500)
-      .json({ error: "Internal Server Error", details: err.message });
+    console.error("Error in submit:", err);
+    res.status(500).json({ error: "Internal Server Error", details: err.message });
   }
 });
 
+
+
 // Assign assessment to a student (always unlocked)
+
+// router.post("/assign/:studentId", async (req, res) => {
+//   try {
+//     const { studentId } = req.params;
+//     const { assessmentSlug } = req.body;
+
+//     // Find the student
+//     const student = await User.findById(studentId);
+//     if (!student || student.role !== "student") {
+//       return res.status(404).json({ error: "Student not found" });
+//     }
+
+//     // Find the assessment
+//       const assessment = await Assessment.findOne({ slug: assessmentSlug }).lean();
+//       if (!assessment) {
+//         return res.status(404).json({ error: "Assessment not found" });
+//       }
+
+
+//     // Check if already assigned by assessmentId
+//     const already = student.assessments?.find((a) => a.assessmentId === assessment.id);
+//     if (already) {
+//       return res.status(400).json({ error: "Assessment already assigned" });
+//     }
+
+//     // ✅ Assign as unlocked by default (forever)
+//     if (!student.assessments) student.assessments = [];
+//     student.assessments.push({ assessmentId: assessment.id, status: "locked" });
+//     await student.save();
+
+//     res.json({ message: "Assessment assigned successfully", assessments: student.assessments });
+//   } catch (err) {
+//     res.status(500).json({ error: err.message });
+//   }
+// });
+
+// ----------------- Part 6: POST /assign/:studentId -----------------
 router.post("/assign/:studentId", async (req, res) => {
   try {
     const { studentId } = req.params;
     const { assessmentSlug } = req.body;
 
-    // Find the student
     const student = await User.findById(studentId);
     if (!student || student.role !== "student") {
       return res.status(404).json({ error: "Student not found" });
     }
 
-    // Find the assessment
-    const assessment = assessments.find((a) => a.slug === assessmentSlug);
+    const assessment = await Assessment.findOne({ slug: assessmentSlug }).lean();
     if (!assessment) {
       return res.status(404).json({ error: "Assessment not found" });
     }
 
-    // Check if already assigned by assessmentId
-    const already = student.assessments?.find((a) => a.assessmentId === assessment.id);
+    const already = student.assessments?.find(a => a.assessmentId === assessment.id);
     if (already) {
       return res.status(400).json({ error: "Assessment already assigned" });
     }
 
-    // ✅ Assign as unlocked by default (forever)
     if (!student.assessments) student.assessments = [];
-    student.assessments.push({ assessmentId: assessment.id, status: "locked" });
+    student.assessments.push({ assessmentId: assessment.id, status: "locked", assignedAt: new Date() });
     await student.save();
 
     res.json({ message: "Assessment assigned successfully", assessments: student.assessments });
   } catch (err) {
+    console.error("Error in assign:", err);
     res.status(500).json({ error: err.message });
   }
 });
 
 
-router.put("/unlock/:studentId/:assessmentId", async (req, res) => {
+// router.put("/unlock/:studentId/:assessmentId", async (req, res) => {
+//   try {
+//     const { studentId, assessmentId } = req.params;
+
+//     // 🧠 Optional but strongly recommended: only doctors can unlock
+//     if (req.user.role !== "doctor") {
+//       return res.status(403).json({ error: "Access denied: only doctors can unlock assessments" });
+//     }
+
+//     // Find the student
+//     const student = await User.findById(studentId);
+//     if (!student || student.role !== "student") {
+//       return res.status(404).json({ error: "Student not found" });
+//     }
+
+//     // Find assessment in student's array
+//     const assessment = student.assessments.find(
+//       (a) => a.assessmentId === parseInt(assessmentId)
+//     );
+
+//     if (!assessment) {
+//       return res.status(404).json({ error: "Assessment not assigned to this student" });
+//     }
+
+//     // Check if it's already unlocked
+//     if (assessment.status === "unlocked") {
+//       return res.json({
+//         message: "Assessment is already unlocked",
+//         assessments: student.assessments,
+//       });
+//     }
+
+//     // Unlock it
+//     assessment.status = "unlocked";
+//     await student.save();
+
+//     res.json({
+//       message: "Assessment unlocked successfully",
+//       assessments: student.assessments,
+//     });
+//   } catch (err) {
+//     console.error(err);
+//     res.status(500).json({ error: err.message });
+//   }
+// });
+
+
+// ----------------- Part 7: PUT /unlock/:studentId/:assessmentId -----------------
+router.put("/unlock/:studentId/:assessmentId", authMiddleware, async (req, res) => {
   try {
     const { studentId, assessmentId } = req.params;
 
-    // 🧠 Optional but strongly recommended: only doctors can unlock
-    if (req.user.role !== "doctor") {
+    // Only doctors allowed
+    if (req.userRole !== "doctor" && req.user?.role !== "doctor") {
       return res.status(403).json({ error: "Access denied: only doctors can unlock assessments" });
     }
 
-    // Find the student
     const student = await User.findById(studentId);
     if (!student || student.role !== "student") {
       return res.status(404).json({ error: "Student not found" });
     }
 
-    // Find assessment in student's array
-    const assessment = student.assessments.find(
-      (a) => a.assessmentId === parseInt(assessmentId)
-    );
+    const assign = student.assessments.find(a => a.assessmentId === parseInt(assessmentId));
+    if (!assign) return res.status(404).json({ error: "Assessment not assigned to this student" });
 
-    if (!assessment) {
-      return res.status(404).json({ error: "Assessment not assigned to this student" });
+    if (assign.status === "unlocked") {
+      return res.json({ message: "Assessment is already unlocked", assessments: student.assessments });
     }
 
-    // Check if it's already unlocked
-    if (assessment.status === "unlocked") {
-      return res.json({
-        message: "Assessment is already unlocked",
-        assessments: student.assessments,
-      });
-    }
-
-    // Unlock it
-    assessment.status = "unlocked";
+    assign.status = "unlocked";
     await student.save();
 
-    res.json({
-      message: "Assessment unlocked successfully",
-      assessments: student.assessments,
-    });
+    res.json({ message: "Assessment unlocked successfully", assessments: student.assessments });
   } catch (err) {
-    console.error(err);
+    console.error("Error unlocking:", err);
     res.status(500).json({ error: err.message });
   }
 });
 
 
+
+// router.put("/unlock-by-assessment/:assessmentId", authMiddleware, async (req, res) => {
+//   try {
+//     if (req.user.role !== "doctor") {
+//       return res.status(403).json({ error: "Access denied: only doctors can unlock assessments" });
+//     }
+
+//     const { assessmentId } = req.params;
+
+//     // Update all students who have this assessment assigned
+//     const result = await User.updateMany(
+//       { role: "student", "assessments.assessmentId": parseInt(assessmentId) },
+//       { $set: { "assessments.$.status": "unlocked" } }
+//     );
+
+//     res.json({
+//       message: `Assessment ${assessmentId} unlocked for ${result.modifiedCount} students`,
+//     });
+//   } catch (err) {
+//     console.error(err);
+//     res.status(500).json({ error: err.message });
+//   }
+// });
+
+
+// Get all Assesments
+
+// router.get("/getall", (req, res) => {
+//   try {
+//     res.status(200).json(assessments);
+//   } catch (error) {
+//     console.error("Error fetching assessments:", error);
+//     res.status(500).json({ message: "Server Error" });
+//   }
+// });
+
+
+// ----------------- Part 8: PUT /unlock-by-assessment/:assessmentId -----------------
 router.put("/unlock-by-assessment/:assessmentId", authMiddleware, async (req, res) => {
   try {
-    if (req.user.role !== "doctor") {
+    if (req.userRole !== "doctor" && req.user?.role !== "doctor") {
       return res.status(403).json({ error: "Access denied: only doctors can unlock assessments" });
     }
 
     const { assessmentId } = req.params;
-
-    // Update all students who have this assessment assigned
     const result = await User.updateMany(
       { role: "student", "assessments.assessmentId": parseInt(assessmentId) },
       { $set: { "assessments.$.status": "unlocked" } }
@@ -1201,20 +1681,87 @@ router.put("/unlock-by-assessment/:assessmentId", authMiddleware, async (req, re
       message: `Assessment ${assessmentId} unlocked for ${result.modifiedCount} students`,
     });
   } catch (err) {
-    console.error(err);
+    console.error("Error unlock-by-assessment:", err);
     res.status(500).json({ error: err.message });
   }
 });
 
 
-// Get all Assesments
+// router.get("/getall", async (req, res) => {
+//   try {
+//     const all = await Assessment.find({}).lean();
+//     res.status(200).json(all);
+//   } catch (error) {
+//     console.error("Error fetching assessments:", error);
+//     res.status(500).json({ message: "Server Error" });
+//   }
+// });
 
-router.get("/getall", (req, res) => {
+
+//Report for User Profile 
+
+
+// ----------------- Part 9: GET /getall -----------------
+router.get("/getall", async (req, res) => {
   try {
-    res.status(200).json(assessments);
+    const all = await Assessment.find({}).lean();
+    res.status(200).json(all);
   } catch (error) {
     console.error("Error fetching assessments:", error);
     res.status(500).json({ message: "Server Error" });
+  }
+});
+
+
+// router.get("/user/reports", async (req, res) => {
+//   try {
+//     const reports = await Report.find({ userEmail: req.query.email })
+//       .sort({ submittedAt: -1 });
+
+//     res.json(reports);
+//   } catch (err) {
+//     res.status(500).json({ error: err.message });
+//   }
+// });
+
+
+// router.get("/report/:id", async (req, res) => {
+//   try {
+//     const report = await Report.findById(req.params.id);
+
+//     if (!report) {
+//       return res.status(404).json({ message: "Report not found" });
+//     }
+
+//     res.json(report);
+//   } catch (error) {
+//     res.status(500).json({ message: "Error fetching report", error });
+//   }
+// });
+
+
+// ----------------- Part 10: Reports -----------------
+router.get("/user/reports", async (req, res) => {
+  try {
+    const reports = await Report.find({ userEmail: req.query.email })
+      .sort({ submittedAt: -1 });
+    res.json(reports);
+  } catch (err) {
+    console.error("Error fetching user reports:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/report/:id", async (req, res) => {
+  try {
+    const report = await Report.findById(req.params.id);
+    if (!report) {
+      return res.status(404).json({ message: "Report not found" });
+    }
+    res.json(report);
+  } catch (error) {
+    console.error("Error fetching report:", error);
+    res.status(500).json({ message: "Error fetching report", error });
   }
 });
 

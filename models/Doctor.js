@@ -25,46 +25,148 @@ const todayScheduleSchema = new mongoose.Schema({
   slots: { type: [timeSlotSchema], default: [] }
 });
 
-// ✅ Doctor schema
 const doctorSchema = new mongoose.Schema(
   {
-    name: { type: String, required: true },
-    specialization: { type: String, required: false },
-    expertise: { type: String, required: false },
-    email: { type: String, required: true, unique: true },
-    phone: { type: String, default: "" },
-    password: { type: String, required: false }, // For login
-    role: { type: String, enum: ["doctor", "admin"], default: "doctor" },
-    experience: { type: Number ,default: 0 },
-    imageUrl: { type: String, default: "" },
-    availabilityType: { type: String, enum: ["online", "offline", "both"], default: "both" },
-    onlineModes: {
-      type: [String], // e.g. ["video", "audio"]
-      default: ["video", "audio"]
+    /* ---------------- BASIC INFO ---------------- */
+    name: {
+      type: String,
+      required: true,
+      trim: true,
     },
-    languages: { type: [String], default: ["English", "Hindi"] },  // Example: ["English", "Hindi", "Marathi"]
-    charges: {
-    amount: { type: Number, default: 0 },      // e.g. 1600
-    duration: { type: String, default: "70 mins" } // e.g. "50 mins"
-  },
-   gender: { type: String, enum: ["male", "female", "other"], default: "other" },
-   about: { type: String, default: "" },
 
-    isAvailable: { type: String, enum: ["available", "not_available"], default: "available" },
-    weeklySchedule: { type: [dayScheduleSchema], default: [] },
+    specialization: {
+      type: String,
+      default: "",
+    },
+
+    expertise: {
+      type: String,
+      default: "",
+    },
+
+    email: {
+      type: String,
+      required: true,
+      unique: true,
+      lowercase: true,
+      trim: true,
+    },
+
+    phone: {
+      type: String,
+      default: "",
+    },
+
+    password: {
+      type: String,
+      default: "", // for login (hashed)
+    },
+
+    role: {
+      type: String,
+      enum: ["doctor", "admin"],
+      default: "doctor",
+    },
+
+    experience: {
+      type: Number,
+      default: 0,
+    },
+
+    imageUrl: {
+      type: String,
+      default: "",
+    },
+
+    gender: {
+      type: String,
+      enum: ["male", "female", "other"],
+      default: "other",
+    },
+
+    about: {
+      type: String,
+      default: "",
+    },
+
+    /* ---------------- LANGUAGE & MODE ---------------- */
+    languages: {
+      type: [String],
+      default: ["English", "Hindi"],
+    },
+
+    availabilityType: {
+      type: String,
+      enum: ["online", "offline", "both"],
+      default: "both",
+    },
+
+    onlineModes: {
+      type: [String], // ["video", "audio"]
+      enum: ["video", "audio"],
+      default: ["video", "audio"],
+    },
+
+    /* ---------------- PRICING ---------------- */
+    charges: {
+      amount: {
+        type: Number,
+        default: 0, // e.g. 1600
+      },
+      duration: {
+        type: String,
+        default: "70 mins",
+      },
+    },
+
+    isFirstSessionOffer: {
+      type: Boolean,
+      default: false,
+    },
+
+    firstSessionPrice: {
+      type: Number,
+      default: null,
+    },
+
+    /* ---------------- AVAILABILITY ---------------- */
+    isAvailable: {
+      type: String,
+      enum: ["available", "not_available"],
+      default: "available",
+    },
+
+    weeklySchedule: {
+      type: [mongoose.Schema.Types.Mixed], // dayScheduleSchema
+      default: [],
+    },
+
     todaySchedule: {
-      type: todayScheduleSchema,
+      type: mongoose.Schema.Types.Mixed, // todayScheduleSchema
       default: () => ({
         date: new Date().toISOString().split("T")[0],
         available: false,
-        slots: []
-      })
+        slots: [],
+      }),
     },
-    dateSlots: { type: Map, of: [timeSlotSchema], default: new Map() },
-    universities: [{ type: mongoose.Schema.Types.ObjectId, ref: "University" }]
+
+    dateSlots: {
+      type: Map,
+      of: [mongoose.Schema.Types.Mixed], // timeSlotSchema
+      default: new Map(),
+    },
+
+    /* ---------------- RELATIONS ---------------- */
+    universities: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "University",
+      },
+    ],
   },
   { timestamps: true }
 );
+
 
 // ✅ Pre-save hooks
 doctorSchema.pre('save', async function (next) {

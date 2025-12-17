@@ -1,52 +1,3 @@
-// import express from "express";
-// import Booking from "../models/Booking.js";
-// import Doctor from "../models/Doctor.js";
-
-// const router = express.Router();
-
-// // Add a new booking
-// router.post("/", async (req, res) => {
-//   try {
-//     const { doctorId, name, email, phone, date, slot, mode } = req.body;
-
-//     if (!doctorId || !date || !slot || !name || !email) {
-//       return res.status(400).json({ success: false, message: "Missing fields" });
-//     }
-
-//     // Save booking
-//     const booking = await Booking.create({
-//       doctorId,
-//       name,
-//       email,
-//       phone,
-//       date,
-//       slot,
-//       mode,
-//     });
-
-//     // Remove booked slot from Doctor's availability
-//     const doctor = await Doctor.findById(doctorId);
-//     if (doctor) {
-//       if (doctor.dateSlots && doctor.dateSlots.has(date)) {
-//         const updatedSlots = doctor.dateSlots.get(date).filter((s) => s !== slot);
-//         doctor.dateSlots.set(date, updatedSlots);
-//         await doctor.save();
-//       }
-//     }
-
-//     res.status(201).json({ success: true, data: booking });
-//   } catch (err) {
-//     console.error("Error creating booking:", err);
-//     res.status(500).json({ success: false, message: err.message });
-//   }
-// });
-
-// export default router;
-
-
-
-
-
 import express from "express";
 import nodemailer from "nodemailer";
 import Booking from "../models/Booking.js";
@@ -147,5 +98,61 @@ router.post("/", async (req, res) => {
     });
   }
 });
+
+
+// GET BOOKINGS (supports user, doctor, or all)
+router.get("/get-bookings", async (req, res) => {
+  try {
+    const { userId, doctorId, email } = req.query;
+
+    // Build dynamic filter
+    const filter = {};
+
+    if (userId) {
+      filter.userId = userId;
+    }
+
+    if (doctorId) {
+      filter.doctorId = doctorId;
+    }
+
+    if (email) {
+      filter.email = email;
+    }
+
+    const bookings = await Booking.find(filter)
+      .populate("doctorId", "name specialization email")
+      .sort({ createdAt: -1 });
+
+    res.status(200).json({
+      success: true,
+      count: bookings.length,
+      data: bookings,
+    });
+  } catch (error) {
+    console.error("❌ Failed to fetch bookings:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch bookings",
+    });
+  }
+});
+
+
+// Check if user has booked ANY session before
+router.get("/has-any-booking/:employeeId", async (req, res) => {
+  try {
+    const { employeeId } = req.params;
+
+    const booking = await Booking.findOne({ employeeId });
+    console.log(booking)
+
+    res.json({ hasBooked: !!booking });
+  } catch (err) {
+    res.status(500).json({ hasBooked: false });
+  }
+});
+
+
 
 export default router;

@@ -6,7 +6,6 @@ import User from "../models/User.js";
 import jwt from "jsonwebtoken";
 import nodemailer from "nodemailer";
 import dotenv from "dotenv";
-console.log("📦 sessionRoutes loaded");
 
 const router = express.Router();
 dotenv.config();
@@ -482,6 +481,7 @@ router.get("/", authMiddleware, async (req, res) => {
     res.status(500).json({ error: "Failed to fetch sessions" });
   }
 });
+
 
 // --------------------
 // Doctor dashboard: get sessions

@@ -377,4 +377,26 @@ router.get("/approved", authMiddleware, async (req, res) => {
   }
 });
 
+
+// GET logged-in employee's appointments
+router.get("/my", authMiddleware, async (req, res) => {
+  try {
+    if (req.userRole !== "employee") {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    const appointments = await EmployeeAppointment.find({
+      employee: req.userId,
+    })
+      .populate("doctor", "name specialization email")
+      .sort({ slotStart: -1 });
+
+    res.json({ data: appointments });
+  } catch (err) {
+    console.error("Error fetching employee appointments:", err);
+    res.status(500).json({ error: "Failed to fetch appointments" });
+  }
+});
+
+
 export default router;

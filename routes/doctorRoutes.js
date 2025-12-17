@@ -302,6 +302,25 @@ router.get("/all", async (req, res) => {
   }
 });
 
+// Doctors with Rs 99 offer
+router.get("/offer", async (req, res) => {
+  try {
+    const doctors = await Doctor.find({ isFirstSessionOffer: true })   // ✅ Only offer doctors
+      .select("name imageUrl experience charges languages availabilityType about specialization expertise gender isFirstSessionOffer firstSessionPrice");
+
+    res.status(200).json({
+      success: true,
+      count: doctors.length,
+      doctors,
+    });
+  } catch (error) {
+    console.error("Error fetching doctors:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error while fetching doctors",
+    });
+  }
+});
 
 // Get doctors for student's university
 router.get("/my-university",  authMiddleware, async (req, res) => {
@@ -333,6 +352,7 @@ router.get("/my-university",  authMiddleware, async (req, res) => {
 // Get doctor by ID
 router.get("/:id", validateObjectId, upload.single("profileImage"), async (req, res) => {
   try {
+
     const doctor = await Doctor.findById(req.params.id)
       .select('-password')
       .populate('name');
@@ -1010,6 +1030,8 @@ router.get("/:id/availabilitybtoc", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+
 
 
 export default router;

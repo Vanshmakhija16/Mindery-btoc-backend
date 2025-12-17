@@ -2,16 +2,38 @@ import mongoose from "mongoose";
 
 const reportSchema = new mongoose.Schema(
   {
-    assessmentSlug: { type: String, required: true }, // to identify which assessment
-    assessmentTitle: { type: String },                // e.g. "Stress Assessment"
-    name: { type: String, default: "Guest User" },    // optional - user name
-    score: { type: Number, required: true },          // total score
-    maxScore: { type: Number, required: true },       // maximum possible score
-    percentage: { type: Number, required: true },     // derived percentage
-    status: { type: String },                         // e.g. "High Stress", "Low Anxiety"
-    message: { type: String },                        // custom feedback text
+    userEmail: { type: String, required: true },
+    userName: { type: String, required: true },
+
+    assessmentSlug: { type: String, required: true }, 
+    assessmentTitle: { type: String },
+
+    // Basic Score Info
+    score: { type: Number, required: true },
+    maxScore: { type: Number, required: true },
+    percentage: { type: Number, required: true },
+    status: { type: String },
+    message: { type: String },
+
+    // ⭐ NEW IMPORTANT FIELDS ⭐
+    domainScores: {
+      type: Object,
+      default: {},       // example: { anxiety: 12, mood: 18 }
+    },
+
+    chartData: {
+      type: Array,
+      default: [],       // example: [ { name: "anxiety", value: 60 }, ... ]
+    },
+
+    insight: {
+      type: String,
+      default: "",
+    },
+
+    submittedAt: { type: Date, default: Date.now },
   },
-  { timestamps: true } // will automatically add createdAt, updatedAt
+  { timestamps: true }
 );
 
 export default mongoose.model("Report", reportSchema);
