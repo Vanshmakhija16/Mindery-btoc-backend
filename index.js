@@ -8,6 +8,7 @@ import employeeQuestionnaireRoutes from "./routes/employeeQuestionnaireRoutes.js
 import authRoutes from "./routes/auth.js";
 import sessionRoutes from "./routes/sessionRoutes.js";
 import doctorRoutes from "./routes/doctorRoutes.js";
+import doctorAuthRoutes from "./routes/doctorAuthRoutes.js";
 import User from "./models/User.js";
 import appointmentRoutes from "./routes/appointmentRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
@@ -19,6 +20,8 @@ import bookingRoute from "./routes/bookingRoute.js";
 import ArticleRoutes from "./routes/ArticleRoute.js";
 import offerRoutes from "./routes/offerchecking.js";
 import paymentRoutes from "./routes/payment.js"
+import btocAdminRoutes from "./routes/btocAdminRoutes.js";
+import jobRoutes from "./routes/jobRoutes.js";
 
 
 
@@ -33,11 +36,11 @@ dotenv.config();
 
 const app = express();
 app.use(express.json());
-app.use(cors({
-  origin: process.env.CLIENT_URL || "*",
-  credentials: true
-}));
-//  app.use(cors())
+// app.use(cors({
+//   origin: process.env.CLIENT_URL || "*",
+//   credentials: true
+// }));
+ app.use(cors())
 
 
 // app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
@@ -80,6 +83,7 @@ export const requireRole = (roles) => (req, res, next) => {
 // Routes
 // --------------------
 app.use("/api/auth", authRoutes);
+app.use("/api/doctor-auth", doctorAuthRoutes);
 app.use("/api/sessions", authMiddleware, sessionRoutes);
 app.use("/api/doctors",doctorRoutes); // auth handled inside doctor.routes if needed
 app.use("/api/appointments", authMiddleware, appointmentRoutes);
@@ -89,10 +93,12 @@ app.use("/api/reports", reportRoutes);
 app.use("/api/companies", CompanyRoute);
 app.use("/api/employee", employeeAuthRoutes);
 app.use("/api/employee-questionnaire", employeeQuestionnaireRoutes);
-app.use("/api/bookings", bookingRoute);
+app.use("/api/bookingRoute", bookingRoute);
 app.use("/api/articles", ArticleRoutes);
 app.use("/api/offer", offerRoutes);
 app.use("/api/payment", paymentRoutes);
+app.use("/api/btocAdmin",btocAdminRoutes);
+app.use("/api/jobs", jobRoutes);
 
 
 
