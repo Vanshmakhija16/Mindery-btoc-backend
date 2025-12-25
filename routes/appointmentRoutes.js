@@ -4,6 +4,7 @@ import Doctor from "../models/Doctor.js";
 import User from "../models/User.js"; // For student info
 import jwt from "jsonwebtoken";
 import nodemailer from "nodemailer";
+import Booking from "../models/Booking.js";
 
 const router = express.Router();
 
@@ -378,25 +379,76 @@ router.get("/approved", authMiddleware, async (req, res) => {
 });
 
 
-// GET logged-in employee's appointments
+// // GET logged-in employee's appointments
 router.get("/my", authMiddleware, async (req, res) => {
   try {
     if (req.userRole !== "employee") {
       return res.status(403).json({ error: "Access denied" });
     }
 
-    const appointments = await EmployeeAppointment.find({
-      employee: req.userId,
+    const appointments = await Booking.find({
+      employeeId: req.userId, // ✅ FIXED
     })
-      .populate("doctor", "name specialization email")
-      .sort({ slotStart: -1 });
+          console.log(req.userId)
 
-    res.json({ data: appointments });
+      .populate("doctorId", "name specialization email") // ✅ FIXED
+      .sort({ date: -1, createdAt: -1 }) // ✅ FIXED
+      .lean();
+
+    res.status(200).json({
+      success: true,
+      count: appointments.length,
+      data: appointments,
+    });
   } catch (err) {
     console.error("Error fetching employee appointments:", err);
     res.status(500).json({ error: "Failed to fetch appointments" });
   }
 });
 
+
+
+// router.get("/my", authMiddleware, async (req, res) => {
+//   try {
+//     if (req.userRole !== "employee") {
+//       return res.status(403).json({ error: "Access denied" });
+//     }
+
+//     const appointments = await Booking.find({
+//       employee: req.userId,
+//     })
+//       .populate("doctor", "name specialization email")
+//       .sort({ appointmentDate: 1, slotStart: 1 }) // ✅ date + time
+//       .lean();
+
+//     const today = new Date();
+//     today.setHours(0, 0, 0, 0);
+
+//     const past = [];
+//     const upcoming = [];
+
+//     appointments.forEach((appt) => {
+//       const apptDate = new Date(appt.appointmentDate);
+//       apptDate.setHours(0, 0, 0, 0);
+
+//       if (apptDate < today) {
+//         past.push(appt);
+//       } else {
+//         upcoming.push(appt);
+//       }
+//     });
+
+//     res.json({
+//       success: true,
+//       total: appointments.length,
+//       past,
+//       upcoming,
+//       data: appointments, // ✅ keeps old frontend working
+//     });
+//   } catch (err) {
+//     console.error("Error fetching employee appointments:", err);
+//     res.status(500).json({ error: "Failed to fetch appointments" });
+//   }
+// });
 
 export default router;

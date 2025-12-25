@@ -100,16 +100,21 @@ router.post("/", async (req, res) => {
 });
 
 
-// GET BOOKINGS (supports user, doctor, or all)
+// GET BOOKINGS (supports employee, doctor, or email)
 router.get("/get-bookings", async (req, res) => {
   try {
-    const { userId, doctorId, email } = req.query;
+    const { userId, employeeId, doctorId, email } = req.query;
 
-    // Build dynamic filter
     const filter = {};
 
+    // ✅ correct field
+    if (employeeId) {
+      filter.employeeId = employeeId;
+    }
+
+    // ✅ backward compatibility
     if (userId) {
-      filter.userId = userId;
+      filter.employeeId = userId;
     }
 
     if (doctorId) {
@@ -122,7 +127,8 @@ router.get("/get-bookings", async (req, res) => {
 
     const bookings = await Booking.find(filter)
       .populate("doctorId", "name specialization email")
-      .sort({ createdAt: -1 });
+      .sort({ date: -1, createdAt: -1 })
+      .lean();
 
     res.status(200).json({
       success: true,
@@ -134,6 +140,28 @@ router.get("/get-bookings", async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Failed to fetch bookings",
+    });
+  }
+});
+
+// GET DOCTOR APPOINTMENTS
+router.get("/doctor/:doctorId", async (req, res) => {
+  try {
+    const { doctorId } = req.params;
+
+    const bookings = await Booking.find({ doctorId })
+      .sort({ date: -1, slot: -1 });
+
+    res.status(200).json({
+      success: true,
+      count: bookings.length,
+      data: bookings,
+    });
+  } catch (error) {
+    console.error("❌ Failed to fetch doctor appointments:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch doctor appointments",
     });
   }
 });

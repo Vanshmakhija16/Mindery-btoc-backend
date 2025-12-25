@@ -1,7 +1,7 @@
 import express from "express";
 import crypto from "crypto";
 import razorpayInstance from "../config/razorpay.js";
-import Doctor from "../models/Doctor.js";
+import btocDoctor from "../models/btocDoctor.js";
 import Booking from "../models/Booking.js";
 
 const router = express.Router();
@@ -18,16 +18,16 @@ router.post("/create-order", async (req, res) => {
 
     const { doctorId, employeeId } = req.body;
 
-    const doctor = await Doctor.findById(doctorId);
+    const doctor = await btocDoctor.findById(doctorId);
     console.log("👨‍⚕️ Doctor:", doctor);
 
     if (!doctor) {
       return res.status(404).json({ message: "Doctor not found" });
     }
 
-    console.log("💰 Charges:", doctor.charges);
+    console.log("💰 Consultation Options:", doctor.consultationOptions);
 
-    let finalAmount = doctor.charges?.amount;
+    let finalAmount = doctor.consultationOptions?.[0]?.price;
 
     if (!finalAmount || finalAmount <= 0) {
       return res
@@ -49,6 +49,7 @@ router.post("/create-order", async (req, res) => {
       orderId: order.id,
       amount: finalAmount,
       doctorName: doctor.name,
+      duration: doctor.consultationOptions?.[0]?.duration || 30,
     });
   } catch (err) {
     console.error("❌ CREATE ORDER ERROR:", err);
@@ -94,7 +95,7 @@ router.post("/verify-and-book", async (req, res) => {
     }
 
     /* ---------------- FETCH DOCTOR ---------------- */
-    const doctor = await Doctor.findById(bookingPayload.doctorId);
+    const doctor = await btocDoctor.findById(bookingPayload.doctorId);
     if (!doctor) {
       return res.status(404).json({ message: "Doctor not found" });
     }
@@ -112,8 +113,8 @@ router.post("/verify-and-book", async (req, res) => {
       slot: bookingPayload.slot,
       mode: bookingPayload.mode,
 
-      amount: doctor.charges.amount,
-      duration: doctor.charges.duration,
+      amount: bookingPayload.price || doctor.consultationOptions?.[0]?.price || 500,
+      duration: bookingPayload.duration || doctor.consultationOptions?.[0]?.duration || 30,
 
       payment: {
         orderId: razorpay_order_id,
@@ -122,14 +123,18 @@ router.post("/verify-and-book", async (req, res) => {
       },
     });
 
+    console.log("✅ Booking created successfully:", booking._id);
+
     return res.status(200).json({
       success: true,
       booking,
     });
   } catch (err) {
-    console.error("❌ Verify & book error:", err);
+    console.error("❌ Verify & book error:", err.message);
+    console.error("Stack:", err.stack);
     return res.status(500).json({
-      message: "Booking failed after payment",
+      success: false,
+      message: err.message || "Booking failed after payment",
     });
   }
 });
@@ -143,7 +148,30 @@ router.post("/create-offer-order", async (req, res) => {
   try {
     const { doctorId, employeeId } = req.body;
 
-    const OFFER_PRICE = 99; // 🔥 FIXED OFFER PRICE
+    if (!doctorId || !employeeId) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing doctorId or employeeId",
+      });
+    }
+
+    // 🔒 STEP 1: Check if user already used offer
+    const existingOfferBooking = await Booking.findOne({
+      employeeId,
+      isOfferBooking: true,
+      "payment.status": "paid", // ✅ ensure completed booking
+    });
+
+    if (existingOfferBooking) {
+      return res.status(400).json({
+        success: false,
+        code: "OFFER_ALREADY_USED",
+        message: "You have already availed this offer",
+      });
+    }
+
+    // 🔥 STEP 2: Create Razorpay order
+    const OFFER_PRICE = 99;
 
     const order = await razorpayInstance.orders.create({
       amount: OFFER_PRICE * 100, // paise
@@ -157,20 +185,22 @@ router.post("/create-offer-order", async (req, res) => {
       },
     });
 
+    // ✅ STEP 3: Send response
     res.status(200).json({
+      success: true,
       orderId: order.id,
       amount: OFFER_PRICE,
       currency: "INR",
     });
   } catch (err) {
-    console.error("Create offer order error:", err);
-    res.status(500).json({ message: "Failed to create offer order" });
+    console.error("❌ Create offer order error:", err);
+    res.status(500).json({
+      success: false,
+      message: "Failed to create offer order",
+    });
   }
 });
 
-/* ------------------------------------------------
-   VERIFY OFFER PAYMENT + BOOK SESSION
------------------------------------------------- */
 
 /* ------------------------------------------------
    VERIFY OFFER PAYMENT + BOOK SESSION
@@ -216,7 +246,7 @@ router.post("/verify-offer-and-book", async (req, res) => {
     } = bookingPayload;
 
     /* ---------------- FETCH DOCTOR ---------------- */
-    const doctor = await Doctor.findById(doctorId);
+    const doctor = await btocDoctor.findById(doctorId);
     if (!doctor) {
       return res.status(404).json({ message: "Doctor not found" });
     }
@@ -256,6 +286,29 @@ router.post("/verify-offer-and-book", async (req, res) => {
   }
 });
 
+
+router.get("/check-offer-status/:employeeId" , async (req,res) => {
+  try{
+    const { employeeId } = req.params;
+    const used = await Booking.findOne({
+      employeeId ,
+      isOfferBooking : true ,
+      "payment.status" : "paid",
+    })
+
+    res.status(200).json({
+      success : true ,
+            offerUsed: !!used,
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to check offer status",
+    });
+  }
+}
+  
+);
 export default router;
 
 

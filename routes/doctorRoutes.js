@@ -2,7 +2,8 @@
 import express from "express";
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
-import Doctor from "../models/Doctor.js";
+// import Doctor from "../models/Doctor.js";
+import btocDoctor from "../models/btocDoctor.js";
 import User from "../models/User.js";
 import upload from "../middlewares/upload.js"; 
 import jwt from "jsonwebtoken";
@@ -26,54 +27,7 @@ const authMiddleware = (req, res, next) => {
     return res.status(401).json({ success: false, message: "Invalid token" });
   }
 };
-// --------------------- HELPERS ---------------------
 
-// // Format doctor for frontend response
-// const formatDoctorResponse = (doctor) => {
-//   // Call the method BEFORE converting to plain object
-//   const today = new Date().toISOString().slice(0, 10);
-//   const todaySlots = doctor.getAvailabilityForDate ? doctor.getAvailabilityForDate(today) : [];
-  
-//   // Add debugging
-//   console.log(`Doctor ${doctor.name}:`);
-//   console.log(`- Today (${today}) slots:`, todaySlots);
-//   console.log(`- Has dateSlots:`, doctor.dateSlots ? 'Yes' : 'No');
-//   if (doctor.dateSlots) {
-//     console.log(`- DateSlots keys:`, Array.from(doctor.dateSlots.keys()));
-//   }
-  
-//   // NOW convert to plain object
-//   const obj = doctor.toObject();
-  
-//   obj.todaySchedule = {
-//     date: today,
-//     available: true, // Change this line - always show as available
-//     slots: todaySlots,
-//   };
-  
-//   // Rest of existing code...
-//   obj.weeklySchedule = obj.weeklySchedule || [];
-  
-//   if (obj.dateSlots && obj.dateSlots instanceof Map) {
-//     const dateSlotObj = {};
-//     for (const [key, value] of obj.dateSlots.entries()) {
-//       dateSlotObj[key] = value;
-//     }
-//     obj.slots = dateSlotObj;
-//     obj.dateSlots = dateSlotObj;
-//   }   else if (obj.dateSlots && typeof obj.dateSlots === 'object') {
-//     obj.slots = obj.dateSlots;
-//   }
-
-//   // ✅ Add profileImage fiaeld before returning
-//   obj.profileImage = doctor.imageUrl 
-//     ? `${process.env.BASE_URL}${doctor.imageUrl}` 
-//     : null;
-  
-//   return obj;
-// };
-
-// Format doctor for frontend response
 const formatDoctorResponse = (doctor) => {
   const today = new Date().toISOString().slice(0, 10);
   const todaySlots = doctor.getAvailabilityForDate
@@ -162,7 +116,7 @@ router.post("/", upload.single("profileImage"), async (req, res) => {
       });
     }
 
-    const existingDoctor = await Doctor.findOne({ email: email.toLowerCase() });
+    const existingDoctor = await btocDoctor.findOne({ email: email.toLowerCase() });
     if (existingDoctor) {
       return res.status(400).json({
         success: false,
@@ -259,7 +213,7 @@ router.get("/", async (req, res) => {
       ];
     }
 
-    const doctors = await Doctor.find(filter)
+    const doctors = await btocDoctor.find(filter)
       .select('-password')
       .populate('name')
       .sort({ createdAt: -1 });
@@ -274,53 +228,195 @@ router.get("/", async (req, res) => {
   }
 });
 
+// router.get("/all", async (req, res) => {
+
+
+//   try {
+//     const doctors = await btocDoctor.find()
+//       .select(
+//         "name imageUrl experience charges languages availabilityType about specialization expertise gender dateSlots"
+//       )
+//       .lean();
+
+//     if (!doctors || doctors.length === 0) {
+//       return res.status(404).json({
+//         success: false,
+//         message: "No doctors found in the database",
+//       });
+//     }
+
+//     const today = new Date();
+//     today.setHours(0, 0, 0, 0);
+
+//     const enrichedDoctors = doctors.map((doctor) => {
+//       const dateSlots = doctor.dateSlots || {};
+
+//       const hasAvailability = Object.entries(dateSlots).some(
+//         ([dateStr, slots]) => {
+//           if (!Array.isArray(slots) || slots.length === 0) return false;
+
+//           const slotDate = new Date(dateStr);
+//           slotDate.setHours(0, 0, 0, 0);
+
+//           return slotDate >= today;
+//         }
+//       );
+
+//       return {
+//         ...doctor,
+//         hasAvailability,
+//       };
+//     });
+
+//     res.status(200).json({
+//       success: true,
+//       count: enrichedDoctors.length,
+//       data: enrichedDoctors,
+//     });
+//   } catch (error) {
+//     console.error("Error fetching doctors:", error);
+//     res.status(500).json({
+//       success: false,
+//       message: "Error fetching doctors",
+//       error: error.message,
+//     });
+//   }
+// });
+
+
+// Doctors with Rs 99 offer
+
+
+// GET ALL ACTIVE DOCTORS (FOR FRONTEND LISTING)
 router.get("/all", async (req, res) => {
   try {
-    const doctors = await Doctor.find()
-      .select("name imageUrl experience charges languages availabilityType about specialization expertise gender"); // Only return relevant fields
-     console.log(doctors)
+    const doctors = await btocDoctor
+      .find({ isActive: true })
+      .select(
+        `
+        name
+        specialization
+        experience
+        profilePhoto
+        gender
+        about
+        languages
+        availabilityType
+        location
+        consultationOptions
+        isFirstSessionOffer
+        firstSessionPrice
+        isAvailable
+        weeklyAvailability
+        dateAvailability
+        `
+      )
+      .lean();
 
-    if (!doctors || doctors.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "No doctors found in the database",
-      });
-    }
-
-    res.status(200).json({
-      success: true,
-      count: doctors.length,
-      data: doctors,
-    });
+    res.status(200).json(doctors);
   } catch (error) {
-    console.error("Error fetching doctors:", error);
+    console.error("❌ Error fetching doctors:", error);
     res.status(500).json({
       success: false,
-      message: "Error fetching doctors",
-      error: error.message,
+      message: "Failed to fetch doctors",
     });
   }
 });
 
-// Doctors with Rs 99 offer
+
 router.get("/offer", async (req, res) => {
   try {
-    const doctors = await Doctor.find({ isFirstSessionOffer: true })   // ✅ Only offer doctors
-      .select("name imageUrl experience charges languages availabilityType about specialization expertise gender isFirstSessionOffer firstSessionPrice");
+    const doctors = await btocDoctor
+      .find({ isFirstSessionOffer: true, isActive: true })
+      .select(
+        `
+        name imageUrl experience charges languages availabilityType
+        about specialization expertise gender
+        isFirstSessionOffer firstSessionPrice
+        dateSlots
+        weeklyAvailability
+        dateAvailability
+        `
+      )
+      .lean();
+
+    if (!doctors || doctors.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "No offer doctors found",
+      });
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const enrichedDoctors = doctors.map((doctor) => {
+      /** -----------------------------
+       * DATE SLOTS (existing logic)
+       * ----------------------------- */
+      const dateSlots = doctor.dateSlots || {};
+
+      const hasDateSlots = Object.entries(dateSlots).some(
+        ([dateStr, slots]) => {
+          if (!Array.isArray(slots) || slots.length === 0) return false;
+
+          const slotDate = new Date(dateStr);
+          slotDate.setHours(0, 0, 0, 0);
+
+          return slotDate >= today;
+        }
+      );
+
+      /** -----------------------------
+       * WEEKLY AVAILABILITY (NEW)
+       * ----------------------------- */
+      const hasWeeklyAvailability =
+        Array.isArray(doctor.weeklyAvailability) &&
+        doctor.weeklyAvailability.some(
+          (slot) =>
+            slot.isActive === true &&
+            slot.startTime &&
+            slot.endTime
+        );
+
+      /** -----------------------------
+       * DATE AVAILABILITY (NEW)
+       * ----------------------------- */
+      const hasDateAvailability =
+        Array.isArray(doctor.dateAvailability) &&
+        doctor.dateAvailability.some(
+          (d) =>
+            d.date &&
+            Array.isArray(d.slots) &&
+            d.slots.length > 0
+        );
+
+      /** -----------------------------
+       * FINAL AVAILABILITY FLAG
+       * ----------------------------- */
+      const hasAvailability =
+        hasDateSlots || hasWeeklyAvailability || hasDateAvailability;
+
+      return {
+        ...doctor,
+        hasAvailability, // ✅ frontend + other routes can rely on this
+      };
+    });
 
     res.status(200).json({
       success: true,
-      count: doctors.length,
-      doctors,
+      count: enrichedDoctors.length,
+      doctors: enrichedDoctors,
     });
   } catch (error) {
-    console.error("Error fetching doctors:", error);
+    console.error("Error fetching offer doctors:", error);
     res.status(500).json({
       success: false,
       message: "Server error while fetching doctors",
     });
   }
 });
+
 
 // Get doctors for student's university
 router.get("/my-university",  authMiddleware, async (req, res) => {
@@ -353,7 +449,7 @@ router.get("/my-university",  authMiddleware, async (req, res) => {
 router.get("/:id", validateObjectId, upload.single("profileImage"), async (req, res) => {
   try {
 
-    const doctor = await Doctor.findById(req.params.id)
+    const doctor = await btocDoctor.findById(req.params.id)
       .select('-password')
       .populate('name');
     
@@ -395,7 +491,7 @@ router.put("/:id", validateObjectId, upload.single("profileImage"), async (req, 
       });
     }
 
-    const doctor = await Doctor.findById(req.params.id);
+    const doctor = await btocDoctor.findById(req.params.id);
     if (!doctor) {
       return res.status(404).json({
         success: false,
@@ -405,7 +501,7 @@ router.put("/:id", validateObjectId, upload.single("profileImage"), async (req, 
 
     // Check for email conflicts if email is changed
     if (email.toLowerCase() !== doctor.email) {
-      const existingDoctor = await Doctor.findOne({ email: email.toLowerCase() });
+      const existingDoctor = await btocDoctor.findOne({ email: email.toLowerCase() });
       if (existingDoctor) {
         return res.status(400).json({
           success: false,
@@ -473,7 +569,7 @@ router.put("/:id", validateObjectId, upload.single("profileImage"), async (req, 
 // ✅ NEW: Get all date slots for a doctor
 router.get("/:id/all-slots", validateObjectId, async (req, res) => {
   try {
-    const doctor = await Doctor.findById(req.params.id);
+    const doctor = await btocDoctor.findById(req.params.id);
     if (!doctor) {
       return res.status(404).json({ success: false, message: "Doctor not found" });
     }
@@ -492,7 +588,7 @@ router.patch("/:id/all-slots", validateObjectId, async (req, res) => {
   try {
     const { dateSlots, isAvailable } = req.body; // Accept isAvailable from frontend
 
-    const doctor = await Doctor.findById(req.params.id);
+    const doctor = await btocDoctor.findById(req.params.id);
     if (!doctor) {
       return res.status(404).json({ success: false, message: "Doctor not found" });
     }
@@ -540,7 +636,7 @@ router.get("/:id/slots", validateObjectId, async (req, res) => {
       return res.status(400).json({ success: false, message: "date query parameter is required" });
     }
 
-    const doctor = await Doctor.findById(req.params.id);
+    const doctor = await btocDoctor.findById(req.params.id);
     if (!doctor) {
       return res.status(404).json({ success: false, message: "Doctor not found" });
     }
@@ -567,7 +663,7 @@ router.patch("/:id/slots", validateObjectId, async (req, res) => {
       return res.status(400).json({ success: false, message: "date is required" });
     }
 
-    const doctor = await Doctor.findById(req.params.id);
+    const doctor = await btocDoctor.findById(req.params.id);
     if (!doctor) {
       return res.status(404).json({ success: false, message: "Doctor not found" });
     }
@@ -591,7 +687,7 @@ router.delete("/:id/slots/:date", validateObjectId, async (req, res) => {
   try {
     const { date } = req.params;
     
-    const doctor = await Doctor.findById(req.params.id);
+    const doctor = await btocDoctor.findById(req.params.id);
     if (!doctor) {
       return res.status(404).json({ success: false, message: "Doctor not found" });
     }
@@ -612,7 +708,7 @@ router.delete("/:id/slots/:date", validateObjectId, async (req, res) => {
 router.get("/:id/availability/:date", validateObjectId, async (req, res) => {
   try {
     const { date } = req.params;
-    const doctor = await Doctor.findById(req.params.id);
+    const doctor = await btocDoctor.findById(req.params.id);
     
     if (!doctor) {
       return res.status(404).json({ success: false, message: "Doctor not found" });
@@ -638,7 +734,7 @@ router.get("/:id/availability/:date", validateObjectId, async (req, res) => {
 // ✅ NEW: Get Doctor's availability for today
 router.get("/:id/availability", validateObjectId, async (req, res) => {
   try {
-    const doctor = await Doctor.findById(req.params.id);
+    const doctor = await btocDoctor.findById(req.params.id);
     if (!doctor) {
       return res.status(404).json({ success: false, message: "Doctor not found" });
     }
@@ -664,7 +760,7 @@ router.get("/:id/availability", validateObjectId, async (req, res) => {
 router.get("/:id/upcoming-availability", validateObjectId, async (req, res) => {
   try {
     const { days = 7 } = req.query;
-    const doctor = await Doctor.findById(req.params.id);
+    const doctor = await btocDoctor.findById(req.params.id);
     
     if (!doctor) {
       return res.status(404).json({ success: false, message: "Doctor not found" });
@@ -698,7 +794,7 @@ router.patch("/:id/book-slot", validateObjectId, async (req, res) => {
       });
     }
 
-    const doctor = await Doctor.findById(req.params.id);
+    const doctor = await btocDoctor.findById(req.params.id);
     if (!doctor) {
       return res.status(404).json({ success: false, message: "Doctor not found" });
     }
@@ -734,7 +830,7 @@ router.patch("/:id/unbook-slot", validateObjectId, async (req, res) => {
       });
     }
 
-    const doctor = await Doctor.findById(req.params.id);
+    const doctor = await btocDoctor.findById(req.params.id);
     if (!doctor) {
       return res.status(404).json({ success: false, message: "Doctor not found" });
     }
@@ -766,7 +862,7 @@ router.patch("/:id/today", validateObjectId, async (req, res) => {
       return res.status(400).json({ success: false, message: "available is required" });
     }
 
-    const doctor = await Doctor.findById(req.params.id);
+    const doctor = await btocDoctor.findById(req.params.id);
     if (!doctor) {
       return res.status(404).json({ success: false, message: "Doctor not found" });
     }
@@ -791,7 +887,7 @@ router.patch("/:id/today", validateObjectId, async (req, res) => {
 // Delete doctor
 router.delete("/:id", validateObjectId, async (req, res) => {
   try {
-    const doctor = await Doctor.findByIdAndDelete(req.params.id);
+    const doctor = await btocDoctor.findByIdAndDelete(req.params.id);
     if (!doctor) {
       return res.status(404).json({ success: false, message: "Doctor not found" });
     }
@@ -826,7 +922,7 @@ router.delete("/:id", validateObjectId, async (req, res) => {
 router.get("/:id/available-dates", validateObjectId, async (req, res) => {
   try {
     const days = parseInt(req.query.days, 10) || 14;
-    const doctor = await Doctor.findById(req.params.id).select("-password");
+    const doctor = await btocDoctor.findById(req.params.id).select("-password");
 
     if (!doctor)
       return res.status(404).json({ success: false, message: "Doctor not found" });
@@ -901,7 +997,7 @@ router.get("/:id/available-dates", validateObjectId, async (req, res) => {
 router.get("/:id/available-dates/employee", async (req, res) => {
   try {
     const days = parseInt(req.query.days, 10) || 14;
-    const doctor = await Doctor.findById(req.params.id).select("-password");
+    const doctor = await btocDoctor.findById(req.params.id).select("-password");
     if (!doctor) return res.status(404).json({ success: false, message: "Doctor not found" });
 
     // 🩺 Get all booked sessions (excluding cancelled)
@@ -979,57 +1075,68 @@ router.get("/:id/available-dates/employee", async (req, res) => {
 
 router.get("/:id/availabilitybtoc", async (req, res) => {
   try {
-    const doctor = await Doctor.findById(req.params.id);
-    if (!doctor)
+    const doctor = await btocDoctor.findById(req.params.id);
+    if (!doctor) {
       return res.status(404).json({ message: "Doctor not found" });
-
-    // 1️⃣ Get raw availability
-    let availability = {};
-    if (doctor.getUpcomingAvailability) {
-      availability = await doctor.getUpcomingAvailability(30);
-    } else if (doctor.dateSlots) {
-      // Convert Map to plain object if needed
-      availability =
-        doctor.dateSlots instanceof Map
-          ? Object.fromEntries(doctor.dateSlots)
-          : doctor.dateSlots;
     }
 
-    // 2️⃣ Fetch all bookings for this doctor
+    /* -----------------------------
+       1️⃣ Generate raw availability
+    ------------------------------*/
+    let availability = {};
+    if (typeof doctor.getUpcomingAvailability === "function") {
+      availability = await doctor.getUpcomingAvailability(30);
+    }
+
+    /* -----------------------------
+       2️⃣ Fetch bookings
+    ------------------------------*/
     const bookings = await Booking.find({ doctorId: doctor._id });
 
-    // 3️⃣ Remove booked slots
+    /* -----------------------------
+       3️⃣ Helpers (CRITICAL)
+    ------------------------------*/
+    const normalizeSlot = (s) =>
+      s.replace(/\s+/g, " ").trim();
+
+    const normalizeDate = (d) =>
+      new Date(d).toISOString().slice(0, 10);
+
+    /* -----------------------------
+       4️⃣ Remove booked slots safely
+    ------------------------------*/
     const availableSlots = {};
 
     for (const [date, slots] of Object.entries(availability)) {
-      // Get all booked slots (strings like "10:00 - 10:50")
       const bookedSlots = bookings
-        .filter((b) => {
-          const bookingDate = new Date(b.date).toISOString().split("T")[0];
-          return bookingDate === date;
-        })
-        .map((b) => b.slot);
+        .filter((b) => normalizeDate(b.date) === date)
+        .map((b) => normalizeSlot(b.slot));
 
-      // ✅ Normalize slot to string for comparison
       availableSlots[date] = (slots || []).filter((s) => {
         const slotStr =
-          typeof s === "string" ? s : `${s.startTime} - ${s.endTime}`;
+          typeof s === "string"
+            ? normalizeSlot(s)
+            : normalizeSlot(`${s.startTime} - ${s.endTime}`);
+
         return !bookedSlots.includes(slotStr);
       });
     }
+       console.log( "availability",availability);
+    console.log("availableslots",availableSlots);
 
-    // 4️⃣ Keep only dates with available slots
-    const filtered = Object.fromEntries(
-      Object.entries(availableSlots).filter(([_, slots]) => slots.length > 0)
-    );
+    /* -----------------------------
+       5️⃣ Return ALL dates (important)
+    ------------------------------*/
+    res.json( availableSlots);
+ 
+    
 
-    // 5️⃣ Send final availability
-    res.json(filtered);
   } catch (err) {
     console.error("❌ Error fetching availability:", err);
     res.status(500).json({ error: err.message });
   }
 });
+
 
 
 
