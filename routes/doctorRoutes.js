@@ -1137,6 +1137,40 @@ router.get("/:id/availabilitybtoc", async (req, res) => {
   }
 });
 
+// About /View Profile of DR
+
+router.get("/doctors/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: "Doctor ID is required",
+      });
+    }
+
+    const doctor = await Doctor.findById(id).select("-password");
+
+    if (!doctor) {
+      return res.status(404).json({
+        success: false,
+        message: "Doctor not found",
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: doctor,
+    });
+  } catch (error) {
+    console.error("Get Doctor Profile Error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+    });
+  }
+});
 
 
 

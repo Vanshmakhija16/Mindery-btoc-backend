@@ -22,6 +22,9 @@ import offerRoutes from "./routes/offerchecking.js";
 import paymentRoutes from "./routes/payment.js"
 import btocAdminRoutes from "./routes/btocAdminRoutes.js";
 import jobRoutes from "./routes/jobRoutes.js";
+import clinicalReportRoutes from "./routes/clinicalReport.routes.js";
+
+
 
 
 
@@ -99,6 +102,8 @@ app.use("/api/offer", offerRoutes);
 app.use("/api/payment", paymentRoutes);
 app.use("/api/btocAdmin",btocAdminRoutes);
 app.use("/api/jobs", jobRoutes);
+app.use("/api/clinical-reports", clinicalReportRoutes);
+
 
 
 
