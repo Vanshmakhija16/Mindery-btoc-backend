@@ -48,13 +48,23 @@ app.use(express.urlencoded({ limit: "20mb", extended: true }));
 // }));
 //  app.use(cors())
 const allowedOrigins = [
-  "https://mytherapy.minderytech.com/"
-]
+  "https://mytherapy.minderytech.com",
+  "http://localhost:5173",
+  "http://localhost:3000",
+];
 
-app.use({
-  origin : allowedOrigins ,
-  credentials : true ,
-});
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    callback(new Error("Not allowed by CORS"));
+  },
+  credentials: true,
+}));
+
+app.options("*", cors());
 
 
 // app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
