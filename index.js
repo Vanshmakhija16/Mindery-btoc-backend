@@ -46,7 +46,15 @@ app.use(express.urlencoded({ limit: "20mb", extended: true }));
 //   origin: process.env.CLIENT_URL ,
 //   credentials: true
 // }));
- app.use(cors())
+//  app.use(cors())
+const allowedOrigins = [
+  "https://mytherapy.minderytech.com/"
+]
+
+app.use({
+  origin : allowedOrigins ,
+  credentials : true ,
+});
 
 
 // app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
