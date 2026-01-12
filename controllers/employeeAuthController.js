@@ -145,90 +145,220 @@ import { sendWhatsAppOtp } from "../services/whatsapp.service.js";
 const otpStore = new Map();
 
 /* ================= SEND OTP (WHATSAPP) ================= */
+// export const sendOtp = async (req, res) => {
+//   try {
+//     let { phone } = req.body;
+
+//     if (!phone) {
+//       return res.status(400).json({ message: "Phone number is required" });
+//     }
+
+//     // ✅ NORMALIZE PHONE NUMBER HERE
+//     // Convert 9571404870 → 919571404870
+//     if (!phone.startsWith("91")) {
+//       phone = `91${phone}`;
+//     }
+
+//     // ❌ check after normalization
+//     const exists = await Employee.findOne({ phone });
+//     if (exists) {
+//       return res.status(400).json({ message: "Phone already registered" });
+//     }
+
+//     const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+//     otpStore.set(phone, {
+//       otp,
+//       expiresAt: Date.now() + 5 * 60 * 1000,
+//     });
+
+//     await sendWhatsAppOtp(phone, otp);
+
+//     return res.json({ message: "OTP sent on WhatsApp" });
+
+//   } catch (err) {
+//     console.error("Send OTP error:", err.response?.data || err.message);
+//     return res.status(500).json({ message: "Failed to send OTP" });
+//   }
+// };
+
+
 export const sendOtp = async (req, res) => {
   try {
-    let { phone } = req.body;
+    const { phone, countryCode } = req.body;
 
-    if (!phone) {
-      return res.status(400).json({ message: "Phone number is required" });
+    if (!phone || !countryCode) {
+      return res.status(400).json({
+        message: "Phone number and country code are required",
+      });
     }
 
-    // ✅ NORMALIZE PHONE NUMBER HERE
-    // Convert 9571404870 → 919571404870
-    if (!phone.startsWith("91")) {
-      phone = `91${phone}`;
-    }
+    // 🌍 GLOBAL phone (NO + sign)
+    const fullPhone = `${countryCode}${phone}`;
 
-    // ❌ check after normalization
-    const exists = await Employee.findOne({ phone });
+    // ❌ Check if already registered
+    const exists = await Employee.findOne({ phone: fullPhone });
     if (exists) {
-      return res.status(400).json({ message: "Phone already registered" });
+      return res.status(400).json({
+        message: "Phone already registered",
+      });
     }
 
+    // 🔐 Generate OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
 
-    otpStore.set(phone, {
+    // ⏳ Store OTP (5 minutes)
+    otpStore.set(fullPhone, {
       otp,
       expiresAt: Date.now() + 5 * 60 * 1000,
     });
 
-    await sendWhatsAppOtp(phone, otp);
+    // 📲 Send OTP via WhatsApp (GetGabs)
+    await sendWhatsAppOtp(fullPhone, otp);
 
-    return res.json({ message: "OTP sent on WhatsApp" });
+    return res.json({
+      message: "OTP sent on WhatsApp",
+    });
 
   } catch (err) {
     console.error("Send OTP error:", err.response?.data || err.message);
-    return res.status(500).json({ message: "Failed to send OTP" });
+    return res.status(500).json({
+      message: "Failed to send OTP",
+    });
   }
 };
 
 
 /* ================= REGISTER (VERIFY OTP & CREATE USER) ================= */
+// export const registerEmployee = async (req, res) => {
+//   try {
+//     const { name, email, phone, password, otp } = req.body;
+
+//     if (!name || !email || !phone || !password || !otp) {
+//       return res.status(400).json({ message: "All fields are required" });
+//     }
+
+//     // 🔍 Check OTP
+//     const record = otpStore.get(phone);
+
+//     if (!record) {
+//       return res.status(400).json({ message: "OTP expired or not requested" });
+//     }
+
+//     if (Date.now() > record.expiresAt) {
+//       otpStore.delete(phone);
+//       return res.status(400).json({ message: "OTP expired" });
+//     }
+
+//     if (record.otp !== otp) {
+//       return res.status(400).json({ message: "Invalid OTP" });
+//     }
+
+//     // ✅ OTP verified → remove from memory
+//     otpStore.delete(phone);
+
+//     // ❌ Double-check no user exists
+//     const existingUser = await Employee.findOne({
+//       $or: [{ email }, { phone }],
+//     });
+//     if (existingUser) {
+//       return res.status(400).json({ message: "User already exists" });
+//     }
+
+//     const hashedPassword = await bcrypt.hash(password, 10);
+
+//     // ✅ Create user ONLY after OTP verification
+//     const employee = await Employee.create({
+//       name,
+//       email,
+//       phone,
+//       password: hashedPassword,
+//     });
+
+//     const token = jwt.sign(
+//       { id: employee._id, phone: employee.phone },
+//       process.env.JWT_SECRET,
+//       { expiresIn: "7d" }
+//     );
+
+//     return res.status(201).json({
+//       message: "Signup successful",
+//       token,
+//       employee: {
+//         id: employee._id,
+//         name: employee.name,
+//         email: employee.email,
+//         phone: employee.phone,
+//       },
+//     });
+//   } catch (err) {
+//     console.error("Register error:", err);
+//     return res.status(500).json({ message: "Signup failed" });
+//   }
+// };
+
+
 export const registerEmployee = async (req, res) => {
   try {
-    const { name, email, phone, password, otp } = req.body;
+    const { name, email, phone, countryCode, password, otp } = req.body;
 
-    if (!name || !email || !phone || !password || !otp) {
-      return res.status(400).json({ message: "All fields are required" });
+    if (!name || !email || !phone || !countryCode || !password || !otp) {
+      return res.status(400).json({
+        message: "All fields are required",
+      });
     }
 
-    // 🔍 Check OTP
-    const record = otpStore.get(phone);
+    // 🌍 BUILD GLOBAL PHONE (same as sendOtp)
+    const fullPhone = `${countryCode}${phone}`;
+
+    // 🔍 Check OTP using fullPhone
+    const record = otpStore.get(fullPhone);
 
     if (!record) {
-      return res.status(400).json({ message: "OTP expired or not requested" });
+      return res.status(400).json({
+        message: "OTP expired or not requested",
+      });
     }
 
     if (Date.now() > record.expiresAt) {
-      otpStore.delete(phone);
-      return res.status(400).json({ message: "OTP expired" });
+      otpStore.delete(fullPhone);
+      return res.status(400).json({
+        message: "OTP expired",
+      });
     }
 
     if (record.otp !== otp) {
-      return res.status(400).json({ message: "Invalid OTP" });
+      return res.status(400).json({
+        message: "Invalid OTP",
+      });
     }
 
-    // ✅ OTP verified → remove from memory
-    otpStore.delete(phone);
+    // ✅ OTP verified → remove from store
+    otpStore.delete(fullPhone);
 
     // ❌ Double-check no user exists
     const existingUser = await Employee.findOne({
-      $or: [{ email }, { phone }],
+      $or: [{ email }, { phone: fullPhone }],
     });
+
     if (existingUser) {
-      return res.status(400).json({ message: "User already exists" });
+      return res.status(400).json({
+        message: "User already exists",
+      });
     }
 
+    // 🔐 Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // ✅ Create user ONLY after OTP verification
+    // ✅ Create user with GLOBAL phone
     const employee = await Employee.create({
       name,
       email,
-      phone,
+      phone: fullPhone,
       password: hashedPassword,
     });
 
+    // 🔑 JWT
     const token = jwt.sign(
       { id: employee._id, phone: employee.phone },
       process.env.JWT_SECRET,
@@ -245,29 +375,41 @@ export const registerEmployee = async (req, res) => {
         phone: employee.phone,
       },
     });
+
   } catch (err) {
     console.error("Register error:", err);
-    return res.status(500).json({ message: "Signup failed" });
+    return res.status(500).json({
+      message: "Signup failed",
+    });
   }
 };
 
 /* ================= LOGIN (PHONE + PASSWORD) ================= */
 export const loginEmployee = async (req, res) => {
   try {
-    const { phone, password } = req.body;
+    const { phone, countryCode, password } = req.body;
 
-    if (!phone || !password) {
-      return res.status(400).json({ message: "Phone and password required" });
+    if (!phone || !countryCode || !password) {
+      return res.status(400).json({
+        message: "Phone, country code and password are required",
+      });
     }
 
-    const employee = await Employee.findOne({ phone });
+    // 🌍 GLOBAL phone
+    const fullPhone = `${countryCode}${phone}`;
+
+    const employee = await Employee.findOne({ phone: fullPhone });
     if (!employee) {
-      return res.status(404).json({ message: "User not found" });
+      return res.status(404).json({
+        message: "User not found",
+      });
     }
 
     const valid = await bcrypt.compare(password, employee.password);
     if (!valid) {
-      return res.status(401).json({ message: "Invalid password" });
+      return res.status(401).json({
+        message: "Invalid password",
+      });
     }
 
     const token = jwt.sign(
@@ -277,9 +419,13 @@ export const loginEmployee = async (req, res) => {
     );
 
     return res.json({ token, employee });
+
   } catch (err) {
     console.error("Login error:", err);
-    return res.status(500).json({ message: "Login failed" });
+    return res.status(500).json({
+      message: "Login failed",
+    });
   }
 };
+
 

@@ -35,9 +35,7 @@ const formatDoctorResponse = (doctor) => {
     : [];
 
   // Debugging logs
-  console.log(`Doctor ${doctor.name}:`);
-  console.log(`- Today (${today}) slots:`, todaySlots);
-  console.log(`- Has dateSlots:`, doctor.dateSlots ? "Yes" : "No");
+
   if (doctor.dateSlots) {
     console.log(`- DateSlots keys:`, Array.from(doctor.dateSlots.keys()));
   }
@@ -216,7 +214,7 @@ router.get("/", async (req, res) => {
     const doctors = await btocDoctor.find(filter)
       .select('-password')
       .populate('name')
-      .sort({ createdAt: -1 });
+      .sort({ displayOrder: 1, createdAt: -1 });
     
     res.status(200).json({ 
       success: true, 
@@ -309,8 +307,12 @@ router.get("/all", async (req, res) => {
         isAvailable
         weeklyAvailability
         dateAvailability
+        profession
+        qualification
+        displayOrder
         `
       )
+      .sort({ displayOrder: 1, createdAt: -1 })
       .lean();
 
     res.status(200).json(doctors);
@@ -331,13 +333,16 @@ router.get("/offer", async (req, res) => {
       .select(
         `
         name imageUrl experience charges languages availabilityType
-        about specialization expertise gender
+        about specialization expertise gender profilePhoto
         isFirstSessionOffer firstSessionPrice
         dateSlots
         weeklyAvailability
         dateAvailability
+        displayOrder
+        profession
         `
       )
+      .sort({ displayOrder: 1, createdAt: -1 })
       .lean();
 
     if (!doctors || doctors.length === 0) {
@@ -430,7 +435,8 @@ router.get("/my-university",  authMiddleware, async (req, res) => {
     }
     const doctors = await Doctor.find({ universities: student.university })
       .select('-password')
-      .populate('universities', 'name');
+      .populate('universities', 'name')
+      .sort({ displayOrder: 1, createdAt: -1 });
     
     // Use Promise.all since formatDoctorResponse is now async
     const formattedDoctors = await Promise.all(doctors.map(formatDoctorResponse));

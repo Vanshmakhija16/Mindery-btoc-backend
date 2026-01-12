@@ -17,3 +17,8 @@ logs/
 # OS / system files
 .DS_Store
 Thumbs.db
+
+# files 
+
+credentials.json
+token.json

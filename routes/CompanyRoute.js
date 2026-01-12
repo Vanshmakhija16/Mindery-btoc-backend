@@ -175,7 +175,7 @@ router.delete("/:id", async (req, res) => {
 
 router.get("/doctors/all", authMiddleware, requireRole("admin"), async (req, res) => {
   try {
-    const doctors = await Doctor.find().select("name email");
+    const doctors = await Doctor.find().select("name email").sort({ displayOrder: 1, createdAt: -1 });
     res.status(200).json({ data: doctors });
   } catch (err) {
     console.error("Failed to fetch all doctors:", err);
@@ -276,7 +276,7 @@ router.get("/all", authMiddleware, requireRole("admin"), async (req, res) => {
 // ✅ Get all doctors (no company filter)
 router.get("/assigned-doctors", async (req, res) => {
   try {
-    const doctors = await Doctor.find({}, "name email specialization imageUrl");
+    const doctors = await Doctor.find({}, "name email specialization imageUrl").sort({ displayOrder: 1, createdAt: -1 });
     res.status(200).json({ data: doctors });
   } catch (error) {
     console.error(error);

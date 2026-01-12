@@ -12,18 +12,30 @@ const bookingSchema = new mongoose.Schema({
     required: true,
   },
 
+  phone: {
+  type: String,
+  required: true,
+  trim: true,
+},
+
+meetLink: {
+  type: String,
+},
+
+
+
   // ✅ ADD THESE
   name: {
     type: String,
     required: true,
     trim: true,
   },
-  email: {
-    type: String,
-    required: true,
-    lowercase: true,
-    trim: true,
-  },
+email: {
+  type: String,
+  required: false,   // ✅ optional
+  lowercase: true,
+  trim: true,
+},
 
   date: String,
   slot: String,

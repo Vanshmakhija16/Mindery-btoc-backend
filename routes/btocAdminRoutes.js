@@ -43,9 +43,48 @@ router.get("/dashboard", async (req, res) => {
 });
 
 /* ================= ADD BTODR DOCTOR ================= */
+// router.post("/doctors", async (req, res) => {
+//   try {
+//     const doctor = new BtocDoctor(req.body);
+//     await doctor.save();
+
+//     const docObj = doctor.toObject();
+//     delete docObj.password;
+
+//     res.status(201).json({
+//       message: "Doctor added successfully",
+//       doctor: docObj
+//     });
+//   } catch (error) {
+//     res.status(400).json({
+//       message: "Failed to add doctor",
+//       error: error.message
+//     });
+//   }
+// });
+
+
 router.post("/doctors", async (req, res) => {
   try {
-    const doctor = new BtocDoctor(req.body);
+    let displayOrder = 9999;
+
+    // Validate and accept displayOrder from request body
+    if (req.body.displayOrder !== undefined && req.body.displayOrder !== null) {
+      const val = Number(req.body.displayOrder);
+      // Only accept positive integers
+      if (Number.isInteger(val) && val >= 1) {
+        displayOrder = val;
+      } else {
+        // Invalid value - silently use default 9999
+        displayOrder = 9999;
+      }
+    }
+
+    const doctor = new BtocDoctor({
+      ...req.body,
+      displayOrder
+    });
+
     await doctor.save();
 
     const docObj = doctor.toObject();
@@ -64,6 +103,43 @@ router.post("/doctors", async (req, res) => {
 });
 
 /* ================= UPDATE BTODR DOCTOR ================= */
+// router.put("/doctors/:doctorId", async (req, res) => {
+//   try {
+//     const { doctorId } = req.params;
+//     const updateData = { ...req.body };
+
+//     // 🔐 Handle password safely
+//     if (updateData.password) {
+//       updateData.password = await bcrypt.hash(updateData.password, 10);
+//     } else {
+//       delete updateData.password;
+//     }
+
+//     const doctor = await BtocDoctor.findByIdAndUpdate(
+//       doctorId,
+//       updateData,
+//       { new: true, runValidators: true }
+//     ).lean();
+
+//     if (!doctor) {
+//       return res.status(404).json({ message: "Doctor not found" });
+//     }
+
+//     delete doctor.password;
+
+//     res.json({
+//       message: "Doctor updated successfully",
+//       doctor
+//     });
+//   } catch (error) {
+//     res.status(400).json({
+//       message: "Failed to update doctor",
+//       error: error.message
+//     });
+//   }
+// });
+
+
 router.put("/doctors/:doctorId", async (req, res) => {
   try {
     const { doctorId } = req.params;
@@ -74,6 +150,26 @@ router.put("/doctors/:doctorId", async (req, res) => {
       updateData.password = await bcrypt.hash(updateData.password, 10);
     } else {
       delete updateData.password;
+    }
+
+    // ⭐ PRIORITY LOGIC - Handle displayOrder
+    if (updateData.displayOrder !== undefined && updateData.displayOrder !== null && updateData.displayOrder !== "") {
+      const val = Number(updateData.displayOrder);
+      // Only accept positive integers or 9999
+      if (Number.isInteger(val) && (val >= 1 || val === 9999)) {
+        updateData.displayOrder = val;
+      } else {
+        // Invalid value - silently use default 9999
+        updateData.displayOrder = 9999;
+      }
+    } else {
+      // If no displayOrder provided, fetch current and keep it
+      const currentDoctor = await BtocDoctor.findById(doctorId);
+      if (currentDoctor) {
+        updateData.displayOrder = currentDoctor.displayOrder;
+      } else {
+        updateData.displayOrder = 9999;
+      }
     }
 
     const doctor = await BtocDoctor.findByIdAndUpdate(
@@ -125,7 +221,7 @@ router.get("/doctors", async (req, res) => {
   try {
     const doctors = await BtocDoctor.find()
       .select("-password")
-      .sort({ createdAt: -1 })
+      .sort({ displayOrder: 1, createdAt: -1 })
       .lean();
 
     res.json(doctors);

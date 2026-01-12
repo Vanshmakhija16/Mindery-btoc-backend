@@ -2,6 +2,11 @@ import express from "express";
 import nodemailer from "nodemailer";
 import Booking from "../models/Booking.js";
 import Doctor from "../models/Doctor.js";
+import {
+  sendBookingConfirmation,
+  sendBookingReminder,
+  sendBookingCancellation,
+} from "../services/whatsapp.service.js";
 
 const router = express.Router();
 
@@ -34,7 +39,7 @@ const sendEmail = async (to, subject, text) => {
 };
 
 /* -----------------------------------
-   ADD A NEW BOOKING + SEND EMAILS
+   ADD A NEW BOOKING + SEND EMAILS & WHATSAPP
 ----------------------------------- */
 router.post("/", async (req, res) => {
   try {
@@ -80,13 +85,28 @@ router.post("/", async (req, res) => {
         "✅ Appointment Confirmation",
         `Hello ${name},\n\nYour session with Dr. ${doctor.name} has been successfully booked.\n\n📅 Date: ${date}\n⏰ Time: ${slot}\n💬 Mode: ${mode || "video"}\n\nYou'll receive reminders closer to your appointment.\n\n— Mindery Team`
       );
-      console.log(name , doctor.name)
+      console.log(name, doctor.name);
     }
 
-    // 4️⃣ Respond
+    // 4️⃣ Send WhatsApp confirmation (if phone is provided)
+    if (phone && doctor) {
+      const bookingDetails = {
+        doctorName: doctor.name,
+        date,
+        time: slot,
+        mode: mode || "video",
+        bookingId: booking._id.toString().slice(-8),
+        amount: doctor.charges || "Contact Doctor",
+        doctorPhone: doctor.phone || "N/A",
+      };
+
+      await sendBookingConfirmation(phone, bookingDetails);
+    }
+
+    // 5️⃣ Respond
     res.status(201).json({
       success: true,
-      message: "Booking created and email notifications sent successfully",
+      message: "Booking created and notifications sent successfully",
       data: booking,
     });
   } catch (err) {
@@ -181,6 +201,76 @@ router.get("/has-any-booking/:employeeId", async (req, res) => {
   }
 });
 
+// CANCEL BOOKING + SEND WHATSAPP NOTIFICATION
+router.delete("/:bookingId", async (req, res) => {
+  try {
+    const { bookingId } = req.params;
 
+    const booking = await Booking.findById(bookingId).populate("doctorId");
+
+    if (!booking) {
+      return res.status(404).json({
+        success: false,
+        message: "Booking not found",
+      });
+    }
+
+    const doctor = booking.doctorId;
+    const refundAmount = booking.amount || 0;
+
+    // Delete the booking
+    await Booking.findByIdAndDelete(bookingId);
+
+    // Restore doctor's available slots
+    if (doctor && doctor.dateSlots && doctor.dateSlots.has(booking.date)) {
+      const slots = doctor.dateSlots.get(booking.date) || [];
+      if (!slots.includes(booking.slot)) {
+        slots.push(booking.slot);
+        doctor.dateSlots.set(booking.date, slots);
+        await doctor.save();
+      }
+    }
+
+    // Send cancellation email to patient
+    await sendEmail(
+      booking.email,
+      "❌ Appointment Cancelled",
+      `Hello ${booking.name},\n\nYour appointment with Dr. ${doctor?.name} on ${booking.date} at ${booking.slot} has been cancelled.\n\nRefund Amount: ₹${refundAmount}\nRefund will be processed within 3-5 business days.\n\nIf you need to reschedule, please visit our website.\n\n— Mindery Team`
+    );
+
+    // Send cancellation WhatsApp to patient
+    if (booking.phone && doctor) {
+      const cancelDetails = {
+        doctorName: doctor.name,
+        date: booking.date,
+        bookingId: bookingId.toString().slice(-8),
+        refundAmount,
+      };
+      await sendBookingCancellation(booking.phone, cancelDetails);
+    }
+
+    // Notify doctor
+    if (doctor) {
+      await sendEmail(
+        doctor.email,
+        "❌ Appointment Cancelled",
+        `Hello Dr. ${doctor.name},\n\nThe appointment scheduled for ${booking.date} at ${booking.slot} with ${booking.name} has been cancelled.\n\n— Mindery Team`
+      );
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Booking cancelled and notifications sent",
+      data: booking,
+    });
+  } catch (error) {
+    console.error("Error cancelling booking:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error cancelling booking",
+      error: error.message,
+    });
+  }
+});
 
 export default router;

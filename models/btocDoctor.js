@@ -77,6 +77,22 @@ const btoDoctorSchema = new mongoose.Schema(
 
     password: { type: String, required: true },
 
+    profession : 
+      {type : String , 
+      default : "",
+      trim : true,
+    },
+
+    qualification : {
+      type : [{
+        type : String ,
+        trim : true ,
+      },
+    ],
+      default : "" ,
+      
+    },
+
     role: {
       type: String,
       enum: ["doctor", "admin"],
@@ -147,6 +163,13 @@ const btoDoctorSchema = new mongoose.Schema(
       type: [dateAvailabilitySchema],
       default: []
     },
+
+    displayOrder: {
+    type: Number,
+    default: 9999,
+    index: true
+  },
+
 
     /* -------- SYSTEM -------- */
     isActive: { type: Boolean, default: true }
