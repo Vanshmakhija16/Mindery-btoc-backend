@@ -54,18 +54,22 @@ const allowedOrigins = [
 
 const corsOptions = {
   origin: (origin, callback) => {
+    // allow same-origin / server-to-server / curl / postman (no Origin header)
     if (!origin) return callback(null, true);
+
     if (allowedOrigins.includes(origin)) return callback(null, true);
+
     return callback(new Error("Not allowed by CORS"));
   },
   credentials: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-allowedHeaders: ["Content-Type", "Authorization", "Accept"],
+  allowedHeaders: ["Content-Type", "Authorization", "Accept"],
 };
 
 app.use(cors(corsOptions));
-app.options("*", cors(corsOptions));
 
+// // ✅ preflight for all routes (works in dev + prod; avoids path-to-regexp "*" crash)
+// app.options("/*", cors(corsOptions));
 
 
 // app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
