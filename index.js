@@ -24,12 +24,9 @@ import paymentRoutes from "./routes/payment.js"
 import btocAdminRoutes from "./routes/btocAdminRoutes.js";
 import jobRoutes from "./routes/jobRoutes.js";
 import clinicalReportRoutes from "./routes/clinicalReport.routes.js";
-import fs from "fs";
 import { oAuth2Client } from "./googlemeet.js";
 import {generateGoogleMeetLink} from "./googlemeet.js"
-
-
-
+import GoogleToken from "./models/GoogleToken.js";
 import path from "path";
 import { fileURLToPath } from "url";
 
@@ -63,7 +60,7 @@ const corsOptions = {
   },
   credentials: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
+allowedHeaders: ["Content-Type", "Authorization", "Accept"],
 };
 
 app.use(cors(corsOptions));
@@ -131,16 +128,19 @@ app.use("/api/jobs", jobRoutes);
 app.use("/api/clinical-reports", clinicalReportRoutes);
 
 
-
-
 app.get("/oauth2callback", async (req, res) => {
   try {
     const { code } = req.query;
+    if (!code) return res.status(400).send("Missing code");
 
     const { tokens } = await oAuth2Client.getToken(code);
     oAuth2Client.setCredentials(tokens);
 
-    fs.writeFileSync("token.json", JSON.stringify(tokens));
+    await GoogleToken.findOneAndUpdate(
+      { owner: "admin" },
+      { tokens },
+      { upsert: true, new: true }
+    );
 
     res.send("Google authorization successful. You can close this tab.");
   } catch (err) {
@@ -148,6 +148,8 @@ app.get("/oauth2callback", async (req, res) => {
     res.status(500).send("Authorization failed");
   }
 });
+
+
 
 
 
@@ -197,8 +199,9 @@ app.get("/api/check",async(req,res)=> {
 // --------------------
 const PORT = process.env.PORT || 5000;
 mongoose
-  .connect(process.env.MONGO_URI)
+  .connect(process.env.MONGO_URI, { serverSelectionTimeoutMS: 10000 })
   .then(() => console.log("MongoDB connected"))
   .catch((err) => console.error("MongoDB connection error:", err));
+
 
 app.listen(PORT,"0.0.0.0", () => console.log(`Server running on port ${PORT}`));
