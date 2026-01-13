@@ -60,30 +60,34 @@
 //   return response.data.hangoutLink;
 // }
 
-
 import { google } from "googleapis";
-import path from "path";
-import fs from "fs";
-import GoogleToken from "./models/GoogleToken.js"; // path adjust if needed
+import GoogleToken from "./models/GoogleToken.js";
 
-const __dirname = new URL(".", import.meta.url).pathname.replace(/^\/+/, "");
-const CREDENTIALS_PATH = path.join(__dirname, "credentials.json");
+const {
+  GOOGLE_CLIENT_ID,
+  GOOGLE_CLIENT_SECRET,
+  GOOGLE_REDIRECT_URI,
+} = process.env;
 
-const credentials = JSON.parse(fs.readFileSync(CREDENTIALS_PATH, "utf8"));
-const { client_id, client_secret, redirect_uris } = credentials.web;
+if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET || !GOOGLE_REDIRECT_URI) {
+  throw new Error(
+    "Missing Google OAuth env vars. Set GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI."
+  );
+}
 
 export const oAuth2Client = new google.auth.OAuth2(
-  client_id,
-  client_secret,
-  redirect_uris[0]
+  GOOGLE_CLIENT_ID,
+  GOOGLE_CLIENT_SECRET,
+  GOOGLE_REDIRECT_URI
 );
 
 export async function generateGoogleMeetLink({ start, end }) {
-  // ✅ Load tokens from MongoDB each time (or cache them)
+  // Load tokens from MongoDB
   const doc = await GoogleToken.findOne({ owner: "admin" });
   if (!doc?.tokens) {
     throw new Error("Google tokens not found. Please authorize again.");
   }
+
   oAuth2Client.setCredentials(doc.tokens);
 
   const calendar = google.calendar({ version: "v3", auth: oAuth2Client });
@@ -95,15 +99,15 @@ export async function generateGoogleMeetLink({ start, end }) {
     conferenceData: {
       createRequest: {
         requestId: `meet-${Date.now()}`,
-        conferenceSolutionKey: { type: "hangoutsMeet" }
-      }
-    }
+        conferenceSolutionKey: { type: "hangoutsMeet" },
+      },
+    },
   };
 
   const response = await calendar.events.insert({
     calendarId: "primary",
     resource: event,
-    conferenceDataVersion: 1
+    conferenceDataVersion: 1,
   });
 
   return response.data.hangoutLink;
