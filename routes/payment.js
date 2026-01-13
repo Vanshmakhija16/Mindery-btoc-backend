@@ -427,7 +427,7 @@ router.post("/verify-and-book", async (req, res) => {
           date: booking.date,
           time: booking.slot,
           mode: booking.mode,
-          meetLink: booking.meetLink ,
+          meetLink: booking.meetLink,
         });
       }
     } catch (wpErr) {
