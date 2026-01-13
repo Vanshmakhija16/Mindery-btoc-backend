@@ -427,7 +427,7 @@ router.post("/verify-and-book", async (req, res) => {
           date: booking.date,
           time: booking.slot,
           mode: booking.mode,
-          meetLink: booking.meetLink || "Will be shared shortly",
+          meetLink: booking.meetLink ,
         });
       }
     } catch (wpErr) {
@@ -505,114 +505,6 @@ router.post("/create-offer-order", async (req, res) => {
     });
   }
 });
-
-/* ------------------------------------------------
-   VERIFY OFFER PAYMENT + BOOK SESSION
------------------------------------------------- */
-// router.post("/verify-offer-and-book", async (req, res) => {
-//   try {
-//     const {
-//       razorpay_order_id,
-//       razorpay_payment_id,
-//       razorpay_signature,
-//       bookingPayload,
-//     } = req.body;
-
-//     if (
-//       !razorpay_order_id ||
-//       !razorpay_payment_id ||
-//       !razorpay_signature ||
-//       !bookingPayload
-//     ) {
-//       return res.status(400).json({ message: "Missing payment data" });
-//     }
-
-//     /* ---------------- VERIFY SIGNATURE ---------------- */
-//     const sign = `${razorpay_order_id}|${razorpay_payment_id}`;
-//     const expectedSign = crypto
-//       .createHmac("sha256", process.env.RAZORPAY_SECRET)
-//       .update(sign)
-//       .digest("hex");
-
-//     if (expectedSign !== razorpay_signature) {
-//       return res.status(400).json({ message: "Payment verification failed" });
-//     }
-
-//     /* ---------------- EXTRACT BOOKING DATA ---------------- */
-//     const {
-//       doctorId,
-//       employeeId,
-//       name,
-//       email,
-//       date,
-//       slot,
-//       mode,
-//     } = bookingPayload;
-
-//     /* ---------------- FETCH DOCTOR ---------------- */
-//     const doctor = await btocDoctor.findById(doctorId);
-//     if (!doctor) {
-//       return res.status(404).json({ message: "Doctor not found" });
-//     }
-
-//     if (!doctor.isFirstSessionOffer || !doctor.firstSessionPrice) {
-//       return res.status(400).json({ message: "Offer not valid for this doctor" });
-//     }
-
-//     /* ---------------- CREATE BOOKING ---------------- */
-//     const booking = await Booking.create({
-//       doctorId,
-//       employeeId,
-//       name,
-//       email,
-//       date,
-//       slot,
-//       mode,
-
-//       amount: doctor.firstSessionPrice,
-//       duration: doctor.charges?.duration || "Offer Session",
-//       isOfferBooking: true,
-
-//       payment: {
-//         orderId: razorpay_order_id,
-//         paymentId: razorpay_payment_id,
-//         status: "paid",
-//       },
-//     });
-
-//     console.log("✅ Offer booking created:", booking._id);
-
-//     /* ---------------- SEND WHATSAPP CONFIRMATION ---------------- */
-//     try {
-//       const employee = await Employee.findById(employeeId);
-
-//       if (employee?.phone) {
-//         await sendBookingConfirmation(employee.phone, {
-//           employeeName: name,
-//           doctorName: doctor.name,
-//           date,
-//           time: slot,
-//           mode,
-//           bookingId: booking._id.toString(),
-//         });
-//       }
-//     } catch (wpErr) {
-//       console.error(
-//         "⚠️ WhatsApp offer booking confirmation failed:",
-//         wpErr.message
-//       );
-//       // ❗ Do NOT fail booking
-//     }
-
-//     res.status(200).json({
-//       success: true,
-//       booking,
-//     });
-//   } catch (err) {
-//     console.error("Verify offer booking error:", err);
-//     res.status(500).json({ message: "Offer booking failed" });
-//   }
-// });
 
 router.post("/verify-offer-and-book", async (req, res) => {
   try {
