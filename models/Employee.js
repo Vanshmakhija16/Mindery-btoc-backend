@@ -21,8 +21,17 @@ const employeeSchema = new mongoose.Schema(
     phone: {
       type: String,
       unique: true,
-      sparse: true, // allows old users without phone
+     required: true,
+      sparse: true, 
       match: [/^[0-9]{10,15}$/, "Invalid phone number"],
+    },
+
+    // 🔑 ADD THESE TWO FIELDS FOR FORGOT PASSWORD
+    otp: {
+      type: String,
+    },
+    otpExpires: {
+      type: Date,
     },
   },
   { timestamps: true }

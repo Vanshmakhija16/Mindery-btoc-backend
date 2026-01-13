@@ -429,3 +429,121 @@ export const loginEmployee = async (req, res) => {
 };
 
 
+// Function 1: Request OTP for Password Reset
+// Function 1: Request OTP for Password Reset
+export const forgotPasswordSendOtp = async (req, res) => {
+  try {
+    let { phone, countryCode } = req.body;
+
+    if (!phone || !countryCode) {
+      return res.status(400).json({ message: "Phone and country code are required" });
+    }
+
+    // 1. CLEANING: Remove spaces, dashes, or + signs from both
+    const cleanPhone = phone.toString().replace(/\D/g, "");
+    const cleanCode = countryCode.toString().replace(/\D/g, "");
+
+    // 2. LOGIC FIX: If the user entered the full number in the phone field,
+    // don't prepend the country code again.
+    const fullPhone = cleanPhone.startsWith(cleanCode) 
+      ? cleanPhone 
+      : `${cleanCode}${cleanPhone}`;
+
+    console.log("DEBUG: Database search string ->", fullPhone);
+
+    // 3. Search DB
+    const employee = await Employee.findOne({ phone: fullPhone });
+    
+    if (!employee) {
+      return res.status(404).json({ 
+        message: `User not found. (Searched for: ${fullPhone})` 
+      });
+    }
+
+    // 4. Generate OTP (6 digits)
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+    // 5. Save OTP to user record
+    employee.otp = otp;
+    employee.otpExpires = Date.now() + 10 * 60 * 1000; // 10 minutes
+    await employee.save();
+
+    // 6. Send OTP via WhatsApp
+    try {
+        await sendWhatsAppOtp(fullPhone, otp);
+        console.log(`✅ OTP for ${fullPhone} sent: ${otp}`);
+    } catch (whatsappErr) {
+        console.error("WhatsApp Service Error:", whatsappErr.message);
+        // We still return success if OTP is saved, or handle as error:
+        // return res.status(500).json({ message: "OTP saved but WhatsApp failed" });
+    }
+
+    return res.json({ 
+        success: true, 
+        message: "OTP sent to your WhatsApp"
+    });
+
+  } catch (err) {
+    console.error("Forgot Pass OTP Error:", err);
+    return res.status(500).json({ message: "Failed to send OTP" });
+  }
+};
+
+// STEP 2: RESET PASSWORD
+export const resetPassword = async (req, res) => {
+  try {
+    const { phone, countryCode, otp, newPassword } = req.body;
+    
+    // 1. Clean the input to match your DB format (strip non-digits)
+    const cleanPhone = phone.toString().replace(/\D/g, "");
+    const cleanCode = countryCode.toString().replace(/\D/g, "");
+    
+    // 2. Ensure country code isn't doubled
+    const fullPhone = cleanPhone.startsWith(cleanCode) 
+      ? cleanPhone 
+      : `${cleanCode}${cleanPhone}`;
+
+    // 3. Find user with valid OTP
+    const employee = await Employee.findOne({
+      phone: fullPhone,
+      otp: otp,
+      otpExpires: { $gt: Date.now() }
+    });
+
+    if (!employee) {
+      return res.status(400).json({ message: "Invalid or expired OTP" });
+    }
+
+    // 4. Hash new password
+    const salt = await bcrypt.genSalt(10);
+    employee.password = await bcrypt.hash(newPassword, salt);
+
+    // 5. Clear OTP fields
+    employee.otp = undefined;
+    employee.otpExpires = undefined;
+    await employee.save();
+
+    // 6. GENERATE TOKEN (Auto-Login)
+    const token = jwt.sign(
+      { id: employee._id, phone: employee.phone },
+      process.env.JWT_SECRET,
+      { expiresIn: "7d" }
+    );
+
+    // 7. Return success + Token + Employee data
+    return res.json({ 
+      success: true, 
+      message: "Password updated successfully",
+      token, 
+      employee: {
+        _id: employee._id,
+        name: employee.name,
+        email: employee.email,
+        phone: employee.phone
+      }
+    });
+  } catch (err) {
+    console.error("Reset Password Error:", err);
+    return res.status(500).json({ message: "Reset password failed" });
+  }
+};
