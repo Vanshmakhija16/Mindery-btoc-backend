@@ -6,6 +6,7 @@ import Booking from "../models/Booking.js";
 import Employee from "../models/Employee.js";
 import { sendBookingConfirmation } from "../services/whatsapp.service.js";
 import { generateGoogleMeetLink } from "../googlemeet.js";
+import { notifyDoctorByEmail } from "../utils/notifyDoctor.js"; // adjust path
 
 const router = express.Router();
 
@@ -410,6 +411,19 @@ router.post("/verify-and-book", async (req, res) => {
 
       booking.meetLink = meetLink;
       await booking.save();
+try {
+  await notifyDoctorByEmail({
+    doctor,
+    booking,
+    employeeName: booking.name, // ✅ fixed (name was undefined)
+  });
+
+  console.log("✅ Doctor email sent successfully to:", doctor.email);
+} catch (e) {
+  console.error("⚠️ Doctor email failed:", e);
+}
+
+
 
       console.log("✅ Meet link generated:", meetLink);
     } catch (meetErr) {
@@ -721,6 +735,23 @@ router.post("/verify-offer-and-book", async (req, res) => {
     await booking.save();
 
     console.log("✅ Offer Meet link generated:", meetLink);
+
+
+    // ✅ EMAIL DOCTOR (after meet link is saved)
+try {
+  console.log("DOCTOR EMAIL:", doctor.email);
+
+  await notifyDoctorByEmail({
+    doctor,
+    booking,
+    employeeName: booking.name,
+  });
+
+  console.log("✅ Doctor email sent successfully to:", doctor.email);
+} catch (e) {
+  console.error("⚠️ Doctor email failed:", e);
+}
+
 
     /* ---------- SEND WHATSAPP (AFTER MEET LINK) ---------- */
 try {
