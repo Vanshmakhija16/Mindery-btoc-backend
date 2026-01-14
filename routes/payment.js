@@ -469,13 +469,13 @@ router.post("/create-offer-order", async (req, res) => {
       "payment.status": "paid",
     });
 
-    // if (existingOfferBooking) {
-    //   return res.status(400).json({
-    //     success: false,
-    //     code: "OFFER_ALREADY_USED",
-    //     message: "You have already availed this offer",
-    //   });
-    // }
+    if (existingOfferBooking) {
+      return res.status(400).json({
+        success: false,
+        code: "OFFER_ALREADY_USED",
+        message: "You have already availed this offer",
+      });
+    }
 
     const OFFER_PRICE = 1;
 
