@@ -580,7 +580,7 @@ router.get("/:id/all-slots", validateObjectId, async (req, res) => {
       return res.status(404).json({ success: false, message: "Doctor not found" });
     }
 
-    const allSlots = doctor.getAllDateSlots();
+    const allSlots = doctor.getUpcomingAvailability(30);
     res.json({ success: true, data: allSlots });
   } catch (error) {
     console.error("Error fetching all slots:", error);
