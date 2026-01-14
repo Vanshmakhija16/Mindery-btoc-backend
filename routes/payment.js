@@ -477,7 +477,7 @@ router.post("/create-offer-order", async (req, res) => {
       });
     }
 
-    const OFFER_PRICE = 1;
+    const OFFER_PRICE = 99;
 
     const order = await razorpayInstance.orders.create({
       amount: OFFER_PRICE * 100,
@@ -723,22 +723,30 @@ router.post("/verify-offer-and-book", async (req, res) => {
     console.log("✅ Offer Meet link generated:", meetLink);
 
     /* ---------- SEND WHATSAPP (AFTER MEET LINK) ---------- */
-    try {
-      const employee = await Employee.findById(employeeId);
+try {
+  const employee = await Employee.findById(employeeId);
 
-      if (employee?.phone) {
-        await sendBookingConfirmation(employee.phone, {
-          employeeName: name,
-          doctorName: doctor.name,
-          date,
-          time: slot,
-          mode,
-          meetLink: booking.meetLink, // guaranteed now
-        });
-      }
-    } catch (wpErr) {
-      console.error("⚠️ Offer WhatsApp failed:", wpErr.message);
-    }
+  // ✅ Prefer phone from booking payload/booking (most reliable), fallback to DB
+  const toPhone = booking?.phone || phone || employee?.phone;
+
+  console.log("📲 WHATSAPP TO:", toPhone);
+
+  if (toPhone) {
+    await sendBookingConfirmation(toPhone, {
+      employeeName: name,
+      doctorName: doctor.name,
+      date,
+      time: slot,
+      mode,
+      meetLink: booking.meetLink, // guaranteed now
+    });
+  } else {
+    console.log("⚠️ WhatsApp not sent: missing recipient phone");
+  }
+} catch (wpErr) {
+  console.error("⚠️ Offer WhatsApp failed:", wpErr.response?.data || wpErr.message);
+}
+
 
     /* ---------- RETURN AFTER EVERYTHING ---------- */
     return res.status(200).json({
