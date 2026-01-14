@@ -31,49 +31,6 @@ const validateWhatsAppConfig = () => {
   return true;
 };
 
-// // Send raw WhatsApp message
-// const sendWhatsAppMessage = async (phone, messageBody) => {
-//   if (!validateWhatsAppConfig()) {
-//     console.log("📱 WhatsApp not configured. Message preview:", messageBody);
-//     return { success: false, message: "WhatsApp not configured" };
-//   }
-
-//   try {
-//     const PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID;
-//     const ACCESS_TOKEN = process.env.WHATSAPP_ACCESS_TOKEN;
-//     const to = normalizePhone(phone);
-
-//     const response = await axios.post(
-//       `https://graph.facebook.com/${WHATSAPP_API_VERSION}/${PHONE_NUMBER_ID}/messages`,
-//       {
-//         messaging_product: "whatsapp",
-//         to,
-//         type: "text",
-//         text: {
-//           body: messageBody,
-//         },
-//       },
-//       {
-//         headers: {
-//           Authorization: `Bearer ${ACCESS_TOKEN}`,
-//           "Content-Type": "application/json",
-//         },
-//       }
-//     );
-
-//     console.log(`✅ WhatsApp message sent to ${to}`);
-//     return { success: true, data: response.data };
-//   } catch (error) {
-//     console.error("❌ WhatsApp error:", error.response?.data || error.message);
-//     return { success: false, error: error.message };
-//   }
-// };
-
-// // Send OTP via WhatsApp
-// export const sendWhatsAppOtp = async (phone, otp) => {
-//   const messageBody = `Your Mindery verification code is *${otp}*. It will expire in 10 minutes. Do not share this code with anyone.`;
-//   return sendWhatsAppMessage(phone, messageBody);
-// };
 
 export const sendWhatsAppOtp = async (fullPhone, otp) => {
   try {
@@ -133,37 +90,6 @@ export const sendWhatsAppOtp = async (fullPhone, otp) => {
 };
 
 
-// // Send booking confirmation via WhatsApp
-// export const sendBookingConfirmation = async (phone, bookingDetails) => {
-//   const {
-//     doctorName,
-//     date,
-//     time,
-//     mode,
-//     bookingId,
-//     amount,
-//     doctorPhone,
-//   } = bookingDetails;
-
-//   const messageBody = `🎉 *Booking Confirmed!*
-
-// Your session with Dr. ${doctorName} is confirmed!
-
-// 📅 *Date:* ${date}
-// ⏰ *Time:* ${time}
-// 📱 *Mode:* ${mode}
-// 💰 *Amount:* ₹${amount}
-// 📋 *Booking ID:* ${bookingId}
-
-// 📞 *Doctor Contact:* ${doctorPhone}
-
-// For any changes, reply to this message or contact support.
-
-// Thank you for choosing Mindery! 🙏`;
-
-//   return sendWhatsAppMessage(phone, messageBody);
-// };
-
 // export const sendBookingConfirmation = async (fullPhone, bookingDetails) => {
 //   try {
     
@@ -189,7 +115,7 @@ export const sendWhatsAppOtp = async (fullPhone, otp) => {
 //       type: "template",
 //       template: {
 //         name: "session_details",
-//         language: { code: "en_US" },
+//         language: { code: "en" },
 //              components: [
 //         {
 //           type: "body",
@@ -198,8 +124,7 @@ export const sendWhatsAppOtp = async (fullPhone, otp) => {
 //               { type: "text", text: doctorName },   // {{2}}
 //               { type: "text", text: date },         // {{3}}
 //               { type: "text", text: time },         // {{4}}
-//               { type: "text", text: mode },         // {{5}}
-//               { type: "text", text: meetLink || "Link will be shared shortly" }, // {{6}}
+//               { type: "text", text: meetLink || "Link will be shared shortly" }, // {{5}}
 //             ],
 //         },
 //       ],
@@ -207,58 +132,13 @@ export const sendWhatsAppOtp = async (fullPhone, otp) => {
 //     };
 
 
-// //   const payload = {
-// //     api_key: process.env.GETGABS_API_KEY,
-// //     sender: process.env.GETGABS_SENDER,
-// //     campaign_id: process.env.GETGABS_CAMPAIGN_ID,
-// //     messaging_product: "whatsapp",
-// //     recipient_type: "individual",
-// //     to: phone, // must be like 91XXXXXXXXXX
-// //     type: "template",
-// //     template: {
-// //       name: "booking_confirmation", // MUST match dashboard
-// //       language: { code: "en_US" },
-// //       components: [
-// //         {
-// //           type: "body",
-// //           parameters: [
-// //             {
-// //               type: "text",
-// //               text: data.employeeName, // {{1}} Hii {{1}}
-// //             },
-// //             {
-// //               type: "text",
-// //               text: data.doctorName, // {{2}} Therapist
-// //             },
-// //             {
-// //               type: "text",
-// //               text: data.date, // {{3}} Date
-// //             },
-// //             {
-// //               type: "text",
-// //               text: data.time, // {{4}} Time
-// //             },
-// //             {
-// //               type: "text",
-// //               text: data.mode, // {{5}} Mode
-// //             },
-// //             {
-// //               type: "text",
-// //               text: data.meetLink, // {{6}} Session Link
-// //             },
-// //           ],
-// //         },
-// //       ],
-// //     },
-// // }; 
 
-
-//     console.log("📤 Sending WhatsApp payload:", payload);
+//     // console.log("📤 Sending WhatsApp payload:", payload);
 
 //     const response = await axios.post(GETGABS_URL, payload, {
 //       headers: { "Content-Type": "application/json" },
 //     });
-//     console.log("📨 GetGabs response:", response.data);
+//     // console.log("📨 GetGabs response:", response.data);
 
 //     return response.data;
 
@@ -272,69 +152,60 @@ export const sendWhatsAppOtp = async (fullPhone, otp) => {
 //   }
 // };
 
+// Send booking reminder via WhatsApp
+
+
+
 export const sendBookingConfirmation = async (fullPhone, bookingDetails) => {
   try {
-    
+   
 
-    const {
 
-      employeeName,
-      doctorName,
-      date,
-      time,
-      mode,
-      bookingId,
-      meetLink,
-    } = bookingDetails;
+    const to = String(fullPhone).replace(/\D/g, ""); // ✅ remove +, spaces, etc.
 
+    const { employeeName, doctorName, date, time, meetLink } = bookingDetails;
+     
     const payload = {
       api_key: process.env.GETGABS_API_KEY,
       sender: process.env.GETGABS_SENDER,
       campaign_id: process.env.GETGABS_CAMPAIGN_ID,
       messaging_product: "whatsapp",
       recipient_type: "individual",
-      to: fullPhone, // countryCode + phone
+      to, // ✅ use cleaned number
       type: "template",
       template: {
         name: "session_details",
         language: { code: "en" },
-             components: [
-        {
-          type: "body",
+        components: [
+          {
+            type: "body",
             parameters: [
-              { type: "text", text: employeeName }, // {{1}}
-              { type: "text", text: doctorName },   // {{2}}
-              { type: "text", text: date },         // {{3}}
-              { type: "text", text: time },         // {{4}}
-              { type: "text", text: meetLink || "Link will be shared shortly" }, // {{5}}
+              { type: "text", text: employeeName },
+              { type: "text", text: doctorName },
+              { type: "text", text: date },
+              { type: "text", text: time },
+              { type: "text", text: meetLink || "Link will be shared shortly" },
             ],
-        },
-      ],
+          },
+        ],
       },
     };
 
-
-
-    // console.log("📤 Sending WhatsApp payload:", payload);
+    console.log("📤 WhatsApp sending to:", to);
 
     const response = await axios.post(GETGABS_URL, payload, {
       headers: { "Content-Type": "application/json" },
     });
-    // console.log("📨 GetGabs response:", response.data);
 
+    console.log("✅ GetGabs response:", response.data);
     return response.data;
-
   } catch (error) {
-    console.error(
-      "GetGabs booking confirmation error:",
-      error.response?.data || error.message
-    );
-    // ❗ Do NOT throw — booking should not fail if WhatsApp fails
+    console.log("❌ GetGabs error:", error.response?.data || error.message);
     return null;
   }
 };
 
-// Send booking reminder via WhatsApp
+
 export const sendBookingReminder = async (phone, bookingDetails) => {
   const { doctorName, date, time, mode, bookingId } = bookingDetails;
 

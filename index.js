@@ -1,6 +1,8 @@
 import express from "express";
 import mongoose from "mongoose";
 import dotenv from "dotenv";
+dotenv.config();
+
 import cors from "cors";
 import jwt from "jsonwebtoken";
 
@@ -34,7 +36,6 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-dotenv.config();
 
 const app = express();
 app.use(express.json({ limit: "20mb" }));
@@ -134,7 +135,10 @@ app.use("/api/clinical-reports", clinicalReportRoutes);
 
 app.get("/oauth2callback", async (req, res) => {
   try {
+
     const { code } = req.query;
+console.log("REDIRECT USED:", process.env.GOOGLE_REDIRECT_URI);
+     console.log(req.query , " query");
     if (!code) return res.status(400).send("Missing code");
 
     const { tokens } = await oAuth2Client.getToken(code);
@@ -145,6 +149,13 @@ app.get("/oauth2callback", async (req, res) => {
       { tokens },
       { upsert: true, new: true }
     );
+    console.log("CALLBACK HIT");
+console.log("TOKENS FROM GOOGLE:", {
+  hasAccess: !!tokens.access_token,
+  hasRefresh: !!tokens.refresh_token,
+  expiry: tokens.expiry_date,
+});
+
 
     res.send("Google authorization successful. You can close this tab.");
   } catch (err) {
