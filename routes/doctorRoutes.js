@@ -286,12 +286,51 @@ router.get("/", async (req, res) => {
 
 
 // GET ALL ACTIVE DOCTORS (FOR FRONTEND LISTING)
+// router.get("/all", async (req, res) => {
+//   try {
+//     const doctors = await btocDoctor
+//       .find({ isActive: true })
+//       .select(
+//         `
+//         name
+//         specialization
+//         experience
+//         profilePhoto
+//         gender
+//         about
+//         languages
+//         availabilityType
+//         location
+//         consultationOptions
+//         isFirstSessionOffer
+//         firstSessionPrice
+//         isAvailable
+//         weeklyAvailability
+//         dateAvailability
+//         profession
+//         qualification
+//         displayOrder
+//         `
+//       )
+//       .sort({ displayOrder: 1, createdAt: -1 })
+//       .lean();
+
+//     res.status(200).json(doctors);
+//   } catch (error) {
+//     console.error("❌ Error fetching doctors:", error);
+//     res.status(500).json({
+//       success: false,
+//       message: "Failed to fetch doctors",
+//     });
+//   }
+// });
+
+
 router.get("/all", async (req, res) => {
   try {
     const doctors = await btocDoctor
-      .find({ isActive: true })
-      .select(
-        `
+      .find({ isActive: true, role: "doctor" })   // ✅ add this
+      .select(`
         name
         specialization
         experience
@@ -310,8 +349,8 @@ router.get("/all", async (req, res) => {
         profession
         qualification
         displayOrder
-        `
-      )
+        role
+      `)
       .sort({ displayOrder: 1, createdAt: -1 })
       .lean();
 
