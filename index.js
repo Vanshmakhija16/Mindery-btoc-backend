@@ -31,6 +31,9 @@ import {generateGoogleMeetLink} from "./googlemeet.js"
 import GoogleToken from "./models/GoogleToken.js";
 import path from "path";
 import { fileURLToPath } from "url";
+import adminAuthRoutes from "./routes/adminauthRoutes.js";
+
+
 
 // ✅ for __dirname in ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -131,6 +134,8 @@ app.use("/api/payment", paymentRoutes);
 app.use("/api/btocAdmin",btocAdminRoutes);
 app.use("/api/jobs", jobRoutes);
 app.use("/api/clinical-reports", clinicalReportRoutes);
+app.use("/api/admin", adminAuthRoutes);
+
 
 
 app.get("/oauth2callback", async (req, res) => {

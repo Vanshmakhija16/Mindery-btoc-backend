@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import BtocDoctor from "../models/btocDoctor.js";
 import EmployeeAppointment from "../models/EmployeeAppointment.js";
 import Booking from "../models/Booking.js";
+import adminAuth from "../middlewares/adminAuth.js";
 
 const router = express.Router();
 
@@ -64,7 +65,7 @@ router.get("/dashboard", async (req, res) => {
 // });
 
 
-router.post("/doctors", async (req, res) => {
+router.post("/doctors",adminAuth, async (req, res) => {
   try {
     let displayOrder = 9999;
 
@@ -140,7 +141,7 @@ router.post("/doctors", async (req, res) => {
 // });
 
 
-router.put("/doctors/:doctorId", async (req, res) => {
+router.put("/doctors/:doctorId", adminAuth, async (req, res) => {
   try {
     const { doctorId } = req.params;
     const updateData = { ...req.body };
@@ -217,9 +218,26 @@ router.delete("/doctors/:doctorId", async (req, res) => {
 });
 
 /* ================= GET ALL BTODR DOCTORS ================= */
-router.get("/doctors", async (req, res) => {
+// router.get("/doctors", adminAuth, async (req, res) => {
+//   try {
+//     const doctors = await BtocDoctor.find()
+//       .select("-password")
+//       .sort({ displayOrder: 1, createdAt: -1 })
+//       .lean();
+
+//     res.json(doctors);
+//   } catch (error) {
+//     res.status(500).json({
+//       message: "Failed to fetch doctors",
+//       error: error.message
+//     });
+//   }
+// });
+
+/* ================= GET ALL BTODR DOCTORS ================= */
+router.get("/doctors", adminAuth, async (req, res) => {
   try {
-    const doctors = await BtocDoctor.find()
+    const doctors = await BtocDoctor.find({ role: "doctor", isActive: true })
       .select("-password")
       .sort({ displayOrder: 1, createdAt: -1 })
       .lean();
@@ -233,8 +251,9 @@ router.get("/doctors", async (req, res) => {
   }
 });
 
+
 /* ================= GET SINGLE BTODR DOCTOR ================= */
-router.get("/doctors/:doctorId", async (req, res) => {
+router.get("/doctors/:doctorId", adminAuth, async (req, res) => {
   try {
     const { doctorId } = req.params;
 
@@ -256,7 +275,7 @@ router.get("/doctors/:doctorId", async (req, res) => {
 });
 
 
-router.get("/doctors/:doctorId/appointments", async (req, res) => {
+router.get("/doctors/:doctorId/appointments", adminAuth,async (req, res) => {
   try {
     const { doctorId } = req.params;
     const now = new Date();
