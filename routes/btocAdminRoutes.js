@@ -65,7 +65,7 @@ router.get("/dashboard", async (req, res) => {
 // });
 
 
-router.post("/doctors",adminAuth, async (req, res) => {
+router.post("/doctors", async (req, res) => {
   try {
     let displayOrder = 9999;
 
@@ -141,7 +141,7 @@ router.post("/doctors",adminAuth, async (req, res) => {
 // });
 
 
-router.put("/doctors/:doctorId", adminAuth, async (req, res) => {
+router.put("/doctors/:doctorId",  async (req, res) => {
   try {
     const { doctorId } = req.params;
     const updateData = { ...req.body };
@@ -235,7 +235,7 @@ router.delete("/doctors/:doctorId", async (req, res) => {
 // });
 
 /* ================= GET ALL BTODR DOCTORS ================= */
-router.get("/doctors", adminAuth, async (req, res) => {
+router.get("/doctors", async (req, res) => {
   try {
     const doctors = await BtocDoctor.find({ role: "doctor", isActive: true })
       .select("-password")
@@ -253,7 +253,7 @@ router.get("/doctors", adminAuth, async (req, res) => {
 
 
 /* ================= GET SINGLE BTODR DOCTOR ================= */
-router.get("/doctors/:doctorId", adminAuth, async (req, res) => {
+router.get("/doctors/:doctorId",  async (req, res) => {
   try {
     const { doctorId } = req.params;
 

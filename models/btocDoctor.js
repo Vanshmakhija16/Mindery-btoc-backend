@@ -293,4 +293,53 @@ btoDoctorSchema.methods.getUpcomingAvailability = function (days = 30) {
   return availability;
 };
 
+// ✅ Get availability for a specific date
+btoDoctorSchema.methods.getAvailabilityForDate = function (dateStr) {
+  return this.getSlotsForDate(dateStr);
+};
+
+// ✅ Set slots for a specific date
+btoDoctorSchema.methods.setSlotsForDate = async function (date, slots) {
+  // Remove existing date availability for this date
+  this.dateAvailability = this.dateAvailability.filter(d => d.date !== date);
+  
+  // Add the new slots as date availability if slots are provided
+  if (slots && slots.length > 0) {
+    // Get the first slot's time to determine start time
+    let startTime = "09:00";
+    let endTime = "17:00";
+    let slotDuration = 30;
+    
+    // Try to infer from slots array
+    if (typeof slots[0] === 'object' && slots[0].startTime) {
+      startTime = slots[0].startTime;
+      endTime = slots[slots.length - 1].endTime || "17:00";
+    } else if (typeof slots[0] === 'string') {
+      // If slots are strings like "09:00-10:00", extract times
+      const firstSlot = slots[0].split('-');
+      if (firstSlot.length >= 1) startTime = firstSlot[0].trim();
+      const lastSlot = slots[slots.length - 1].split('-');
+      if (lastSlot.length >= 2) endTime = lastSlot[1].trim();
+    }
+    
+    // Use slotDuration from first weeklyAvailability or default to 30
+    if (this.weeklyAvailability && this.weeklyAvailability.length > 0) {
+      slotDuration = this.weeklyAvailability[0].slotDuration || 30;
+    }
+    
+    const newDateAvailability = {
+      date: date,
+      startTime: startTime,
+      endTime: endTime,
+      slotDuration: slotDuration,
+      breaks: [],
+      isActive: true
+    };
+    this.dateAvailability.push(newDateAvailability);
+  }
+  
+  this.markModified('dateAvailability');
+  await this.save();
+};
+
 export default mongoose.model("BtoDoctor", btoDoctorSchema);

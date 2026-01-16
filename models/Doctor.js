@@ -232,13 +232,6 @@
 //   return await this.getAvailabilityForDate(todayDate);
 // };
 
-// // ✅ Set slots for a specific date
-// doctorSchema.methods.setSlotsForDate = async function (date, slots) {
-//   if (!this.dateSlots) this.dateSlots = new Map();
-//   this.dateSlots.set(date, slots);
-//   this.markModified('dateSlots');
-//   await this.save();
-// };
 
 // // ✅ Get all date-specific slots
 // doctorSchema.methods.getAllDateSlots = function () {
