@@ -298,6 +298,14 @@ btoDoctorSchema.methods.getAvailabilityForDate = function (dateStr) {
   return this.getSlotsForDate(dateStr);
 };
 
+// ✅ Clear slots for a specific date
+btoDoctorSchema.methods.clearSlotsForDate = async function (date) {
+  // Remove the date availability for this date
+  this.dateAvailability = this.dateAvailability.filter(d => d.date !== date);
+  this.markModified('dateAvailability');
+  await this.save();
+};
+
 // ✅ Set slots for a specific date
 btoDoctorSchema.methods.setSlotsForDate = async function (date, slots) {
   // Remove existing date availability for this date
