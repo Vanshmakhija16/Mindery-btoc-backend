@@ -5,6 +5,7 @@ import User from "../models/User.js"; // For student info
 import jwt from "jsonwebtoken";
 import nodemailer from "nodemailer";
 import Booking from "../models/Booking.js";
+import EmployeeAppointment from "../models/EmployeeAppointment.js"; // adjust path
 
 const router = express.Router();
 
@@ -380,32 +381,52 @@ router.get("/approved", authMiddleware, async (req, res) => {
 
 
 // // GET logged-in employee's appointments
+// router.get("/my", authMiddleware, async (req, res) => {
+//   try {
+//     if (req.userRole !== "employee") {
+//       return res.status(403).json({ error: "Access denied" });
+//     }
+
+//     const appointments = await Booking.find({
+//       employeeId: req.userId, // ✅ FIXED
+//     })
+//           console.log(req.userId)
+
+//       .populate("doctorId", "name specialization email") // ✅ FIXED
+//       .sort({ date: -1, createdAt: -1 }) // ✅ FIXED
+//       .lean();
+
+//     res.status(200).json({
+//       success: true,
+//       count: appointments.length,
+//       data: appointments,
+//     });
+//   } catch (err) {
+//     console.error("Error fetching employee appointments:", err);
+//     res.status(500).json({ error: "Failed to fetch appointments" });
+//   }
+// });
+
 router.get("/my", authMiddleware, async (req, res) => {
   try {
     if (req.userRole !== "employee") {
-      return res.status(403).json({ error: "Access denied" });
+      return res.status(403).json({ success: false, error: "Access denied" });
     }
 
-    const appointments = await Booking.find({
-      employeeId: req.userId, // ✅ FIXED
-    })
-          console.log(req.userId)
-
-      .populate("doctorId", "name specialization email") // ✅ FIXED
-      .sort({ date: -1, createdAt: -1 }) // ✅ FIXED
+    const appointments = await EmployeeAppointment.find({ employee: req.userId })
+      .sort({ slotStart: -1, createdAt: -1 })
       .lean();
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       count: appointments.length,
       data: appointments,
     });
   } catch (err) {
     console.error("Error fetching employee appointments:", err);
-    res.status(500).json({ error: "Failed to fetch appointments" });
+    return res.status(500).json({ success: false, error: "Failed to fetch appointments" });
   }
 });
-
 
 
 // router.get("/my", authMiddleware, async (req, res) => {

@@ -169,6 +169,10 @@ const btoDoctorSchema = new mongoose.Schema(
     default: 9999,
     index: true
   },
+  meetLink: {
+     type: String 
+    },
+
 
 
     /* -------- SYSTEM -------- */

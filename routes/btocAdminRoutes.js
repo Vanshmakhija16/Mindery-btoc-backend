@@ -44,26 +44,6 @@ router.get("/dashboard", async (req, res) => {
 });
 
 /* ================= ADD BTODR DOCTOR ================= */
-// router.post("/doctors", async (req, res) => {
-//   try {
-//     const doctor = new BtocDoctor(req.body);
-//     await doctor.save();
-
-//     const docObj = doctor.toObject();
-//     delete docObj.password;
-
-//     res.status(201).json({
-//       message: "Doctor added successfully",
-//       doctor: docObj
-//     });
-//   } catch (error) {
-//     res.status(400).json({
-//       message: "Failed to add doctor",
-//       error: error.message
-//     });
-//   }
-// });
-
 
 router.post("/doctors", async (req, res) => {
   try {
@@ -104,42 +84,6 @@ router.post("/doctors", async (req, res) => {
 });
 
 /* ================= UPDATE BTODR DOCTOR ================= */
-// router.put("/doctors/:doctorId", async (req, res) => {
-//   try {
-//     const { doctorId } = req.params;
-//     const updateData = { ...req.body };
-
-//     // 🔐 Handle password safely
-//     if (updateData.password) {
-//       updateData.password = await bcrypt.hash(updateData.password, 10);
-//     } else {
-//       delete updateData.password;
-//     }
-
-//     const doctor = await BtocDoctor.findByIdAndUpdate(
-//       doctorId,
-//       updateData,
-//       { new: true, runValidators: true }
-//     ).lean();
-
-//     if (!doctor) {
-//       return res.status(404).json({ message: "Doctor not found" });
-//     }
-
-//     delete doctor.password;
-
-//     res.json({
-//       message: "Doctor updated successfully",
-//       doctor
-//     });
-//   } catch (error) {
-//     res.status(400).json({
-//       message: "Failed to update doctor",
-//       error: error.message
-//     });
-//   }
-// });
-
 
 router.put("/doctors/:doctorId",  async (req, res) => {
   try {
@@ -217,22 +161,6 @@ router.delete("/doctors/:doctorId", async (req, res) => {
   }
 });
 
-/* ================= GET ALL BTODR DOCTORS ================= */
-// router.get("/doctors", adminAuth, async (req, res) => {
-//   try {
-//     const doctors = await BtocDoctor.find()
-//       .select("-password")
-//       .sort({ displayOrder: 1, createdAt: -1 })
-//       .lean();
-
-//     res.json(doctors);
-//   } catch (error) {
-//     res.status(500).json({
-//       message: "Failed to fetch doctors",
-//       error: error.message
-//     });
-//   }
-// });
 
 /* ================= GET ALL BTODR DOCTORS ================= */
 router.get("/doctors", async (req, res) => {
@@ -274,8 +202,8 @@ router.get("/doctors/:doctorId",  async (req, res) => {
   }
 });
 
-
-router.get("/doctors/:doctorId/appointments", adminAuth,async (req, res) => {
+/* ================= GET DOCTOR'S APPOINTMENTS ================= */
+router.get("/doctors/:doctorId/appointments" , async (req, res) => {
   try {
     const { doctorId } = req.params;
     const now = new Date();
@@ -318,66 +246,6 @@ router.get("/doctors/:doctorId/appointments", adminAuth,async (req, res) => {
   }
 });
 
-
-
-
-
-
-/* ================= GET DOCTOR'S APPOINTMENTS ================= */
-// router.get("/doctors/:doctorId/appointments", async (req, res) => {
-//   try {
-//     const { doctorId } = req.params;
-
-//     const now = new Date();
-
-//     // Fetch all appointments for this doctor and populate employee details
-//     const appointments = await EmployeeAppointment.find({ doctor: doctorId })
-//       .populate("employee", "name email phone")
-//       .sort({ slotStart: -1 })
-//       .lean();
-
-//     if (!appointments) {
-//       return res.status(404).json({ message: "No appointments found" });
-//     }
-
-//     // Fetch booking amounts for all appointments
-//     const appointmentIds = appointments.map(app => app._id);
-//     const bookings = await Booking.find({ _id: { $in: appointmentIds } })
-//       .lean();
-
-//     const bookingMap = {};
-//     bookings.forEach(booking => {
-//       bookingMap[booking._id] = booking.amount || 0;
-//     });
-
-//     // Format appointments for frontend
-//     const formattedAppointments = appointments.map(app => ({
-//       _id: app._id,
-//       employeeName: app.employee?.name || "N/A",
-//       employeeEmail: app.employee?.email || "N/A",
-//       employeePhone: app.employee?.phone || "N/A",
-//       date: app.slotStart,
-//       slot: app.slotStart ? new Date(app.slotStart).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false }) : "N/A",
-//       mode: app.mode === "video" ? "online_video" : app.mode === "audio" ? "online_audio" : "offline",
-//       amount: bookingMap[app._id] || 0,
-//     }));
-
-//     // Separate into upcoming and past
-//     const upcoming = formattedAppointments.filter(app => new Date(app.date) >= now);
-//     const past = formattedAppointments.filter(app => new Date(app.date) < now);
-      
-//     res.json({
-//       upcoming,
-//       past
-//     });
-//   } catch (error) {
-//     console.error("Error fetching appointments:", error);
-//     res.status(500).json({
-//       message: "Failed to fetch appointments",
-//       error: error.message
-//     });
-//   }
-// });
 
 
 

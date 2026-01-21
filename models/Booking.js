@@ -6,6 +6,11 @@ const bookingSchema = new mongoose.Schema({
     ref: "Doctor",
     required: true,
   },
+  doctorName: {
+  type: String,
+  trim: true,
+},
+
   employeeId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "Employee",

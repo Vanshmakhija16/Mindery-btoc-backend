@@ -547,3 +547,16 @@ export const resetPassword = async (req, res) => {
     return res.status(500).json({ message: "Reset password failed" });
   }
 };
+
+
+export const getMe = async (req, res) => {
+  try {
+    // authEmployee middleware already attached employee on req.employee
+    return res.status(200).json({
+      success: true,
+      employee: req.employee,
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+};

@@ -273,4 +273,30 @@ router.delete("/:bookingId", async (req, res) => {
   }
 });
 
+// ✅ GET ALL BOOKINGS OF A PARTICULAR EMPLOYEE
+router.get("/employee/:employeeId", async (req, res) => {
+  try {
+    const { employeeId } = req.params;
+
+    const bookings = await Booking.find({ employeeId })
+      .populate("doctorId", "name specialization email")
+      .sort({ date: -1, createdAt: -1 })
+      .lean();
+
+    return res.status(200).json({
+      success: true,
+      count: bookings.length,
+      data: bookings,
+    });
+  } catch (error) {
+    console.error("❌ Failed to fetch employee bookings:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch employee bookings",
+      error: error.message,
+    });
+  }
+});
+
+
 export default router;

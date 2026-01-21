@@ -702,6 +702,7 @@ router.post("/verify-offer-and-book", async (req, res) => {
     /* ---------- CREATE BOOKING ---------- */
     const booking = await Booking.create({
       doctorId,
+      doctorName: doctor.name, // ✅ save name snapshot
       employeeId,
       name,
       phone,
@@ -726,15 +727,12 @@ router.post("/verify-offer-and-book", async (req, res) => {
     const startDateTime = `${booking.date}T${startTime}:00`;
     const endDateTime = `${booking.date}T${endTime}:00`;
 
-    const meetLink = await generateGoogleMeetLink({
-      start: startDateTime,
-      end: endDateTime,
-    });
+    const meetLink = await doctor.meetLink;
 
     booking.meetLink = meetLink;
     await booking.save();
 
-    console.log("✅ Offer Meet link generated:", meetLink);
+    console.log("✅ Offer Meet link from doctor db:", meetLink);
 
 
     // ✅ EMAIL DOCTOR (after meet link is saved)
