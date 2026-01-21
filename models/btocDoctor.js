@@ -354,4 +354,50 @@ btoDoctorSchema.methods.setSlotsForDate = async function (date, slots) {
   await this.save();
 };
 
+// ✅ 45-min slot generator (does NOT change DB values)
+btoDoctorSchema.methods.getUpcomingAvailability45 = function (days = 30) {
+  const availability = {};
+  const today = new Date();
+  const DURATION = 45;
+
+  const toMinutes = (t) => {
+    const [h, m] = t.split(":").map(Number);
+    return h * 60 + m;
+  };
+
+  const toTime = (m) =>
+    `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(
+      2,
+      "0"
+    )}`;
+
+  for (let i = 0; i < days; i++) {
+    const date = new Date(today);
+    date.setDate(today.getDate() + i);
+    const dateStr = date.toISOString().slice(0, 10);
+
+    const weekday = date.toLocaleDateString("en-US", { weekday: "long" });
+
+    // Priority: date-wise > weekly (same as your existing logic)
+    const rule =
+      this.dateAvailability.find((d) => d.date === dateStr && d.isActive) ||
+      this.weeklyAvailability.find((w) => w.day === weekday && w.isActive);
+
+    if (!rule) continue;
+
+    let start = toMinutes(rule.startTime);
+    const end = toMinutes(rule.endTime);
+
+    const slots = [];
+    while (start + DURATION <= end) {
+      slots.push(`${toTime(start)} - ${toTime(start + DURATION)}`);
+      start += DURATION;
+    }
+
+    if (slots.length > 0) availability[dateStr] = slots;
+  }
+
+  return availability;
+};
+
 export default mongoose.model("BtoDoctor", btoDoctorSchema);

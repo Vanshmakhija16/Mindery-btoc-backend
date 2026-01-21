@@ -311,28 +311,6 @@ router.post("/create-order", async (req, res) => {
 // });
 
 
-// router.get("/check-offer-status/:employeeId" , async (req,res) => {
-//   try{
-//     const { employeeId } = req.params;
-//     const used = await Booking.findOne({
-//       employeeId ,
-//       isOfferBooking : true ,
-//       "payment.status" : "paid",
-//     })
-
-//     res.status(200).json({
-//       success : true ,
-//             offerUsed: !!used,
-//     });
-//   } catch (err) {
-//     res.status(500).json({
-//       success: false,
-//       message: "Failed to check offer status",
-//     });
-//   }
-// }
-  
-// );
 
 
 router.post("/verify-and-book", async (req, res) => {
@@ -373,6 +351,7 @@ router.post("/verify-and-book", async (req, res) => {
     /* ---------- CREATE BOOKING ---------- */
     const booking = await Booking.create({
       doctorId: bookingPayload.doctorId,
+      doctorName: doctor.name,
       employeeId: bookingPayload.employeeId,
       name: bookingPayload.name,
       phone: bookingPayload.phone,
@@ -397,38 +376,27 @@ router.post("/verify-and-book", async (req, res) => {
 
     console.log("✅ Booking created:", booking._id);
 
-    /* ---------- GENERATE GOOGLE MEET ---------- */
-    try {
-      const [startTime, endTime] = booking.slot.split(" - ");
+/* ----------  GOOGLE MEET ---------- */
+try {
+  const meetLink = doctor.meetLink;
+  booking.meetLink = meetLink;
+  await booking.save();
+  console.log("✅ Meet link :", meetLink);
+} catch (meetErr) {
+  console.error("⚠️ Meet generation failed:", meetErr.message);
+}
 
-      const startDateTime = `${booking.date}T${startTime}:00`;
-      const endDateTime = `${booking.date}T${endTime}:00`;
-
-      const meetLink = await generateGoogleMeetLink({
-        start: startDateTime,
-        end: endDateTime,
-      });
-
-      booking.meetLink = meetLink;
-      await booking.save();
+/* ---------- EMAIL DOCTOR ---------- */
 try {
   await notifyDoctorByEmail({
     doctor,
     booking,
-    employeeName: booking.name, // ✅ fixed (name was undefined)
+    employeeName: booking.name,
   });
-
   console.log("✅ Doctor email sent successfully to:", doctor.email);
 } catch (e) {
   console.error("⚠️ Doctor email failed:", e);
 }
-
-
-
-      console.log("✅ Meet link generated:", meetLink);
-    } catch (meetErr) {
-      console.error("⚠️ Meet generation failed:", meetErr.message);
-    }
 
     /* ---------- SEND WHATSAPP ---------- */
     try {
@@ -520,140 +488,6 @@ router.post("/create-offer-order", async (req, res) => {
   }
 });
 
-// router.post("/verify-offer-and-book", async (req, res) => {
-//   try {
-//     const {
-//       razorpay_order_id,
-//       razorpay_payment_id,
-//       razorpay_signature,
-//       bookingPayload,
-//     } = req.body;
-
-//     if (
-//       !razorpay_order_id ||
-//       !razorpay_payment_id ||
-//       !razorpay_signature ||
-//       !bookingPayload
-//     ) {
-//       return res.status(400).json({ message: "Missing payment data" });
-//     }
-
-//     /* ---------- VERIFY RAZORPAY ---------- */
-//     const sign = `${razorpay_order_id}|${razorpay_payment_id}`;
-//     const expectedSign = crypto
-//       .createHmac("sha256", process.env.RAZORPAY_SECRET)
-//       .update(sign)
-//       .digest("hex");
-
-//     if (expectedSign !== razorpay_signature) {
-//       return res.status(400).json({ message: "Payment verification failed" });
-//     }
-
-//     const {
-//       doctorId,
-//       employeeId,
-//       name,
-//       phone,
-//       email,
-//       date,
-//       slot,
-//       mode,
-//     } = bookingPayload;
-
-//     /* ---------- FETCH DOCTOR ---------- */
-//     const doctor = await btocDoctor.findById(doctorId);
-//     if (!doctor) {
-//       return res.status(404).json({ message: "Doctor not found" });
-//     }
-
-//     if (!doctor.isFirstSessionOffer || !doctor.firstSessionPrice) {
-//       return res
-//         .status(400)
-//         .json({ message: "Offer not valid for this doctor" });
-//     }
-
-//     /* ---------- CREATE BOOKING ---------- */
-//     const booking = await Booking.create({
-//       doctorId,
-//       employeeId,
-//       name,
-//       phone,
-//       email: email || null,
-//       date,
-//       slot,
-//       mode,
-//       amount: doctor.firstSessionPrice,
-//       duration: doctor.charges?.duration || 30,
-//       isOfferBooking: true,
-//       payment: {
-//         orderId: razorpay_order_id,
-//         paymentId: razorpay_payment_id,
-//         status: "paid",
-//       },
-//     });
-
-//     console.log("✅ Offer booking created:", booking._id);
-
-//     /* ---------- GENERATE GOOGLE MEET ---------- */
-//     try {
-//       const [startTime, endTime] = booking.slot.split(" - ");
-
-//       const startDateTime = `${booking.date}T${startTime}:00`;
-//       const endDateTime = `${booking.date}T${endTime}:00`;
-
-//       const meetLink = await generateGoogleMeetLink({
-//         start: startDateTime,
-//         end: endDateTime,
-//       });
-
-//       booking.meetLink = meetLink;
-//       await booking.save();
-
-//       console.log("✅ Offer Meet link generated:", meetLink);
-//     } catch (meetErr) {
-//       console.error("⚠️ Offer Meet failed:", meetErr.message);
-//     }
-
-
-//     console.log("📌 WHATSAPP DEBUG START");
-// console.log("Employee ID:", employeeId);
-// console.log("Booking Meet Link:", booking.meetLink);
-// console.log("Booking Name:", name);
-// console.log("Doctor Name:", doctor.name);
-// console.log("Date:", date);
-// console.log("Time:", slot);
-// console.log("Mode:", mode);
-
-//     /* ---------- SEND WHATSAPP ---------- */
-//     try {
-//       const employee = await Employee.findById(employeeId);
-
-//       if (employee?.phone) {
-//         await sendBookingConfirmation(employee.phone, {
-//           employeeName: name,
-//           doctorName: doctor.name,
-//           date,
-//           time: slot,
-//           mode,
-//           meetLink: booking.meetLink || "Will be shared shortly",
-//         });
-//       }
-//     } catch (wpErr) {
-//       console.error("⚠️ Offer WhatsApp failed:", wpErr.message);
-//     }
-
-//     return res.status(200).json({
-//       success: true,
-//       booking,
-//     });
-//   } catch (err) {
-//     console.error("❌ Offer booking error:", err.message);
-//     return res.status(500).json({
-//       success: false,
-//       message: "Offer booking failed",
-//     });
-//   }
-// });
 
 router.post("/verify-offer-and-book", async (req, res) => {
   try {

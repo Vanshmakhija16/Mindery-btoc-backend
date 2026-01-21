@@ -1182,6 +1182,70 @@ router.get("/:id/availabilitybtoc", async (req, res) => {
   }
 });
 
+router.get("/:id/availabilitybtoc/nonOffer", async (req, res) => {
+  try {
+    const doctor = await btocDoctor.findById(req.params.id);
+    if (!doctor) {
+      return res.status(404).json({ message: "Doctor not found" });
+    }
+
+    /* -----------------------------
+       1️⃣ Generate raw availability
+    ------------------------------*/
+    let availability = {};
+    if (typeof doctor.getUpcomingAvailability === "function") {
+      availability = await doctor.getUpcomingAvailability45(30);
+    }
+
+    /* -----------------------------
+       2️⃣ Fetch bookings
+    ------------------------------*/
+    const bookings = await Booking.find({ doctorId: doctor._id });
+
+    /* -----------------------------
+       3️⃣ Helpers (CRITICAL)
+    ------------------------------*/
+    const normalizeSlot = (s) =>
+      s.replace(/\s+/g, " ").trim();
+
+    const normalizeDate = (d) =>
+      new Date(d).toISOString().slice(0, 10);
+
+    /* -----------------------------
+       4️⃣ Remove booked slots safely
+    ------------------------------*/
+    const availableSlots = {};
+
+    for (const [date, slots] of Object.entries(availability)) {
+      const bookedSlots = bookings
+        .filter((b) => normalizeDate(b.date) === date)
+        .map((b) => normalizeSlot(b.slot));
+
+      availableSlots[date] = (slots || []).filter((s) => {
+        const slotStr =
+          typeof s === "string"
+            ? normalizeSlot(s)
+            : normalizeSlot(`${s.startTime} - ${s.endTime}`);
+
+        return !bookedSlots.includes(slotStr);
+      });
+    }
+       console.log( "availability",availability);
+    console.log("availableslots",availableSlots);
+
+    /* -----------------------------
+       5️⃣ Return ALL dates (important)
+    ------------------------------*/
+    res.json( availableSlots);
+ 
+    
+
+  } catch (err) {
+    console.error("❌ Error fetching availability:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // About /View Profile of DR
 
 router.get("/doctors/:id", async (req, res) => {
