@@ -254,12 +254,57 @@ btoDoctorSchema.methods.getSlotsForDate = function (
   return buildSlots(weeklyRule);
 };
 
+// btoDoctorSchema.methods.getUpcomingAvailability = function (days = 30) {
+//   const availability = {};
+//   const today = new Date();
+
+//   const toMinutes = (t) => {
+//     const [h, m] = t.split(":").map(Number);
+//     return h * 60 + m;
+//   };
+
+//   const toTime = (m) =>
+//     `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+
+//   for (let i = 0; i < days; i++) {
+//     const date = new Date(today);
+//     date.setDate(today.getDate() + i);
+//     const dateStr = date.toISOString().slice(0, 10);
+
+//     const weekday = date.toLocaleDateString("en-US", { weekday: "long" });
+
+//     // Priority: date-wise > weekly
+//     const rule =
+//       this.dateAvailability.find(d => d.date === dateStr) ||
+//       this.weeklyAvailability.find(w => w.day === weekday);
+
+//     if (!rule) continue;
+
+//     let start = toMinutes(rule.startTime);
+//     const end = toMinutes(rule.endTime);
+
+//     const slots = [];
+//     while (start + rule.slotDuration <= end) {
+//       slots.push(`${toTime(start)} - ${toTime(start + rule.slotDuration)}`);
+//       start += rule.slotDuration;
+//     }
+
+//     if (slots.length > 0) {
+//       availability[dateStr] = slots;
+//     }
+//   }
+
+//   return availability;
+// };
+
+// ✅ Get availability for a specific date
+
 btoDoctorSchema.methods.getUpcomingAvailability = function (days = 30) {
   const availability = {};
   const today = new Date();
 
   const toMinutes = (t) => {
-    const [h, m] = t.split(":").map(Number);
+    const [h, m] = String(t).split(":").map(Number);
     return h * 60 + m;
   };
 
@@ -273,31 +318,50 @@ btoDoctorSchema.methods.getUpcomingAvailability = function (days = 30) {
 
     const weekday = date.toLocaleDateString("en-US", { weekday: "long" });
 
-    // Priority: date-wise > weekly
-    const rule =
-      this.dateAvailability.find(d => d.date === dateStr) ||
-      this.weeklyAvailability.find(w => w.day === weekday);
+    // ✅ Prefer dateAvailability; fallback weeklyAvailability (only active rules)
+    const dateRule = this.dateAvailability.find(
+      (d) => d.date === dateStr && d.isActive
+    );
+    const weeklyRule = this.weeklyAvailability.find(
+      (w) => w.day === weekday && w.isActive
+    );
 
+    const rule = dateRule || weeklyRule;
     if (!rule) continue;
 
-    let start = toMinutes(rule.startTime);
+    const duration = Number(rule.slotDuration || 30);
+    const start = toMinutes(rule.startTime);
     const end = toMinutes(rule.endTime);
 
+    // ✅ IMPORTANT: if dateRule exists but has no breaks, fallback to weekly breaks
+    const effectiveBreaks =
+      dateRule?.breaks?.length ? dateRule.breaks : weeklyRule?.breaks || [];
+
+    const breaks = (effectiveBreaks || [])
+      .filter((b) => b?.startTime && b?.endTime && b.startTime < b.endTime)
+      .map((b) => ({
+        start: toMinutes(b.startTime),
+        end: toMinutes(b.endTime),
+      }));
+
     const slots = [];
-    while (start + rule.slotDuration <= end) {
-      slots.push(`${toTime(start)} - ${toTime(start + rule.slotDuration)}`);
-      start += rule.slotDuration;
+    for (let t = start; t + duration <= end; t += duration) {
+      const overlapsBreak = breaks.some(
+        (b) => t < b.end && t + duration > b.start
+      );
+      if (overlapsBreak) continue;
+
+      slots.push(`${toTime(t)} - ${toTime(t + duration)}`);
     }
 
-    if (slots.length > 0) {
-      availability[dateStr] = slots;
-    }
+    if (slots.length > 0) availability[dateStr] = slots;
   }
 
   return availability;
 };
 
-// ✅ Get availability for a specific date
+
+
 btoDoctorSchema.methods.getAvailabilityForDate = function (dateStr) {
   return this.getSlotsForDate(dateStr);
 };
@@ -355,6 +419,51 @@ btoDoctorSchema.methods.setSlotsForDate = async function (date, slots) {
 };
 
 // ✅ 45-min slot generator (does NOT change DB values)
+// btoDoctorSchema.methods.getUpcomingAvailability45 = function (days = 30) {
+//   const availability = {};
+//   const today = new Date();
+//   const DURATION = 45;
+
+//   const toMinutes = (t) => {
+//     const [h, m] = t.split(":").map(Number);
+//     return h * 60 + m;
+//   };
+
+//   const toTime = (m) =>
+//     `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(
+//       2,
+//       "0"
+//     )}`;
+
+//   for (let i = 0; i < days; i++) {
+//     const date = new Date(today);
+//     date.setDate(today.getDate() + i);
+//     const dateStr = date.toISOString().slice(0, 10);
+
+//     const weekday = date.toLocaleDateString("en-US", { weekday: "long" });
+
+//     // Priority: date-wise > weekly (same as your existing logic)
+//     const rule =
+//       this.dateAvailability.find((d) => d.date === dateStr && d.isActive) ||
+//       this.weeklyAvailability.find((w) => w.day === weekday && w.isActive);
+
+//     if (!rule) continue;
+
+//     let start = toMinutes(rule.startTime);
+//     const end = toMinutes(rule.endTime);
+
+//     const slots = [];
+//     while (start + DURATION <= end) {
+//       slots.push(`${toTime(start)} - ${toTime(start + DURATION)}`);
+//       start += DURATION;
+//     }
+
+//     if (slots.length > 0) availability[dateStr] = slots;
+//   }
+
+//   return availability;
+// };
+
 btoDoctorSchema.methods.getUpcomingAvailability45 = function (days = 30) {
   const availability = {};
   const today = new Date();
@@ -366,10 +475,7 @@ btoDoctorSchema.methods.getUpcomingAvailability45 = function (days = 30) {
   };
 
   const toTime = (m) =>
-    `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(
-      2,
-      "0"
-    )}`;
+    `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
 
   for (let i = 0; i < days; i++) {
     const date = new Date(today);
@@ -378,20 +484,26 @@ btoDoctorSchema.methods.getUpcomingAvailability45 = function (days = 30) {
 
     const weekday = date.toLocaleDateString("en-US", { weekday: "long" });
 
-    // Priority: date-wise > weekly (same as your existing logic)
     const rule =
       this.dateAvailability.find((d) => d.date === dateStr && d.isActive) ||
       this.weeklyAvailability.find((w) => w.day === weekday && w.isActive);
 
     if (!rule) continue;
 
-    let start = toMinutes(rule.startTime);
+    const start = toMinutes(rule.startTime);
     const end = toMinutes(rule.endTime);
 
+    const breaks = (rule.breaks || []).map((b) => ({
+      start: toMinutes(b.startTime),
+      end: toMinutes(b.endTime),
+    }));
+
     const slots = [];
-    while (start + DURATION <= end) {
-      slots.push(`${toTime(start)} - ${toTime(start + DURATION)}`);
-      start += DURATION;
+    for (let t = start; t + DURATION <= end; t += DURATION) {
+      const overlapsBreak = breaks.some((b) => t < b.end && t + DURATION > b.start);
+      if (overlapsBreak) continue;
+
+      slots.push(`${toTime(t)} - ${toTime(t + DURATION)}`);
     }
 
     if (slots.length > 0) availability[dateStr] = slots;

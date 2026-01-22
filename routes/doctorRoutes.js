@@ -700,30 +700,65 @@ router.get("/:id/slots", validateObjectId, async (req, res) => {
 });
 
 // ✅ UPDATED: Update slots for a specific date (supports new dateSlots method)
+// router.patch("/:id/slots", validateObjectId, async (req, res) => {
+//   try {
+//     const { date, slots } = req.body;
+    
+//     if (!date) {
+//       return res.status(400).json({ success: false, message: "date is required" });
+//     }
+
+//     const doctor = await btocDoctor.findById(req.params.id);
+//     if (!doctor) {
+//       return res.status(404).json({ success: false, message: "Doctor not found" });
+//     }
+
+//     // Use the new method to set slots for specific date
+//     await doctor.setSlotsForDate(date, slots || []);
+    
+//     res.json({ 
+//       success: true, 
+//       message: "Slots updated successfully",
+//       data: { date, slots: doctor.getAvailabilityForDate(date) }
+//     });
+//   } catch (error) {
+//     console.error("Error updating slots:", error);
+//     res.status(500).json({ success: false, message: error.message });
+//   }
+// });
+
 router.patch("/:id/slots", validateObjectId, async (req, res) => {
   try {
-    const { date, slots } = req.body;
-    
-    if (!date) {
-      return res.status(400).json({ success: false, message: "date is required" });
+    const { date, startTime, endTime, slotDuration, breaks = [], isActive = true } = req.body;
+
+    if (!date || !startTime || !endTime || !slotDuration) {
+      return res.status(400).json({ success: false, message: "date, startTime, endTime, slotDuration are required" });
     }
 
     const doctor = await btocDoctor.findById(req.params.id);
-    if (!doctor) {
-      return res.status(404).json({ success: false, message: "Doctor not found" });
-    }
+    if (!doctor) return res.status(404).json({ success: false, message: "Doctor not found" });
 
-    // Use the new method to set slots for specific date
-    await doctor.setSlotsForDate(date, slots || []);
-    
-    res.json({ 
-      success: true, 
+    doctor.dateAvailability = doctor.dateAvailability.filter(d => d.date !== date);
+
+    doctor.dateAvailability.push({
+      date,
+      startTime,
+      endTime,
+      slotDuration: Number(slotDuration),
+      breaks,
+      isActive
+    });
+
+    doctor.markModified("dateAvailability");
+    await doctor.save();
+
+    return res.json({
+      success: true,
       message: "Slots updated successfully",
       data: { date, slots: doctor.getAvailabilityForDate(date) }
     });
   } catch (error) {
-    console.error("Error updating slots:", error);
-    res.status(500).json({ success: false, message: error.message });
+    return res.status(500).json({ success: false, message: error.message });
   }
 });
 
