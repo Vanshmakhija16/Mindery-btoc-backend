@@ -1,7 +1,7 @@
 import express from "express";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
-import btocDoctor from "../models/btocDoctor.js"; // your model that has role
+import Admin from "../models/Admin.js";
 
 const router = express.Router();
 
@@ -11,25 +11,35 @@ router.post("/login", async (req, res) => {
     const { email, password } = req.body;
 
     if (!email || !password) {
-      return res.status(400).json({ success: false, message: "Email and password required" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Email and password required" });
     }
 
-    const admin = await btocDoctor.findOne({ email: email.toLowerCase() });
+    const admin = await Admin.findOne({
+      email: email.toLowerCase(),
+      isActive: true,
+    });
+
     if (!admin) {
-      return res.status(401).json({ success: false, message: "Invalid credentials" });
+      return res
+        .status(401)
+        .json({ success: false, message: "Invalid credentials" });
     }
 
-    if (admin.role !== "admin") {
-      return res.status(403).json({ success: false, message: "Not an admin" });
-    }
-
-    const ok = await bcrypt.compare(password, admin.password);
-    if (!ok) {
-      return res.status(401).json({ success: false, message: "Invalid credentials" });
+    const isMatch = await bcrypt.compare(password, admin.password);
+    if (!isMatch) {
+      return res
+        .status(401)
+        .json({ success: false, message: "Invalid credentials" });
     }
 
     const token = jwt.sign(
-      { id: admin._id, role: admin.role, email: admin.email },
+      {
+        id: admin._id,
+        role: "admin",
+        email: admin.email,
+      },
       process.env.JWT_SECRET,
       { expiresIn: "7d" }
     );
@@ -37,11 +47,18 @@ router.post("/login", async (req, res) => {
     return res.json({
       success: true,
       token,
-      user: { _id: admin._id, name: admin.name, email: admin.email, role: admin.role },
+      user: {
+        _id: admin._id,
+        name: admin.name,
+        email: admin.email,
+        role: "admin",
+      },
     });
-  } catch (err) {
-    console.error("Admin login error:", err);
-    return res.status(500).json({ success: false, message: "Login failed" });
+  } catch (error) {
+    console.error("Admin login error:", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "Login failed" });
   }
 });
 
