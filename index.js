@@ -32,7 +32,7 @@ import GoogleToken from "./models/GoogleToken.js";
 import path from "path";
 import { fileURLToPath } from "url";
 import adminAuthRoutes from "./routes/adminauthRoutes.js";
-
+import contactRoutes from "./routes/contact.js"
 
 
 // ✅ for __dirname in ES modules
@@ -135,6 +135,9 @@ app.use("/api/btocAdmin",btocAdminRoutes);
 app.use("/api/jobs", jobRoutes);
 app.use("/api/clinical-reports", clinicalReportRoutes);
 app.use("/api/adminAuth", adminAuthRoutes);
+app.use("/api/contact", contactRoutes);
+
+
 
 
 
