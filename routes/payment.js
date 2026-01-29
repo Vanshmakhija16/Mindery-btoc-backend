@@ -15,6 +15,49 @@ const router = express.Router();
  * CREATE ORDER
  * ----------------------------------
  */
+// router.post("/create-order", async (req, res) => {
+//   try {
+//     console.log("🔥 create-order called");
+//     console.log("📦 Body:", req.body);
+
+//     const { doctorId, employeeId } = req.body;
+
+//     const doctor = await btocDoctor.findById(doctorId);
+//     console.log("👨‍⚕️ Doctor:", doctor);
+
+//     if (!doctor) {
+//       return res.status(404).json({ message: "Doctor not found" });
+//     }
+
+//     let finalAmount = doctor.consultationOptions?.[0]?.price;
+
+//     if (!finalAmount || finalAmount <= 0) {
+//       return res.status(400).json({ message: "Doctor price not configured" });
+//     }
+
+//     const order = await razorpayInstance.orders.create({
+//       amount: finalAmount * 100,
+//       currency: "INR",
+//       receipt: `receipt_${Date.now()}`,
+//     });
+
+//     console.log("✅ Razorpay order created:", order.id);
+
+//     res.status(200).json({
+//       orderId: order.id,
+//       amount: finalAmount,
+//       doctorName: doctor.name,
+//       duration: doctor.consultationOptions?.[0]?.duration || 30,
+//     });
+//   } catch (err) {
+//     console.error("❌ CREATE ORDER ERROR:", err);
+//     res.status(500).json({
+//       message: "Create order failed",
+//       error: err.message,
+//     });
+//   }
+// });
+
 router.post("/create-order", async (req, res) => {
   try {
     console.log("🔥 create-order called");
@@ -29,26 +72,40 @@ router.post("/create-order", async (req, res) => {
       return res.status(404).json({ message: "Doctor not found" });
     }
 
-    let finalAmount = doctor.consultationOptions?.[0]?.price;
+    // 1. Base Price
+    let baseAmount = doctor.consultationOptions?.[0]?.price;
 
-    if (!finalAmount || finalAmount <= 0) {
+    if (!baseAmount || baseAmount <= 0) {
       return res.status(400).json({ message: "Doctor price not configured" });
     }
 
+    // 2. GST Calculation
+    const cgst = baseAmount * 0.09;
+    const sgst = baseAmount * 0.09;
+    const totalAmount = baseAmount + cgst + sgst;
+
+    // 3. Razorpay Order (Amount in Paise)
     const order = await razorpayInstance.orders.create({
-      amount: finalAmount * 100,
+      amount: Math.round(totalAmount * 100), // FINAL amount
       currency: "INR",
       receipt: `receipt_${Date.now()}`,
     });
 
     console.log("✅ Razorpay order created:", order.id);
 
+    // 4. Response to Frontend
     res.status(200).json({
       orderId: order.id,
-      amount: finalAmount,
+
+      baseAmount: baseAmount.toFixed(0),
+      cgst: cgst.toFixed(0),
+      sgst: sgst.toFixed(0),
+      totalAmount: totalAmount.toFixed(0),
+
       doctorName: doctor.name,
       duration: doctor.consultationOptions?.[0]?.duration || 30,
     });
+
   } catch (err) {
     console.error("❌ CREATE ORDER ERROR:", err);
     res.status(500).json({
@@ -58,7 +115,9 @@ router.post("/create-order", async (req, res) => {
   }
 });
 
+
 /**
+ * 
  * ----------------------------------
  * VERIFY PAYMENT + BOOK SESSION
  * ----------------------------------
@@ -313,6 +372,122 @@ router.post("/create-order", async (req, res) => {
 
 
 
+// router.post("/verify-and-book", async (req, res) => {
+//   try {
+//     const {
+//       razorpay_order_id,
+//       razorpay_payment_id,
+//       razorpay_signature,
+//       bookingPayload,
+//     } = req.body;
+
+//     if (
+//       !razorpay_order_id ||
+//       !razorpay_payment_id ||
+//       !razorpay_signature ||
+//       !bookingPayload
+//     ) {
+//       return res.status(400).json({ message: "Invalid payment payload" });
+//     }
+
+//     /* ---------- VERIFY RAZORPAY SIGNATURE ---------- */
+//     const sign = `${razorpay_order_id}|${razorpay_payment_id}`;
+//     const expectedSign = crypto
+//       .createHmac("sha256", process.env.RAZORPAY_SECRET)
+//       .update(sign)
+//       .digest("hex");
+
+//     if (expectedSign !== razorpay_signature) {
+//       return res.status(400).json({ message: "Payment verification failed" });
+//     }
+
+//     /* ---------- FETCH DOCTOR ---------- */
+//     const doctor = await btocDoctor.findById(bookingPayload.doctorId);
+//     if (!doctor) {
+//       return res.status(404).json({ message: "Doctor not found" });
+//     }
+
+//     /* ---------- CREATE BOOKING ---------- */
+//     const booking = await Booking.create({
+//       doctorId: bookingPayload.doctorId,
+//       doctorName: doctor.name,
+//       employeeId: bookingPayload.employeeId,
+//       name: bookingPayload.name,
+//       phone: bookingPayload.phone,
+//       email: bookingPayload.email || null,
+//       date: bookingPayload.date,
+//       slot: bookingPayload.slot,
+//       mode: bookingPayload.mode,
+//       amount:
+//         bookingPayload.price ||
+//         doctor.consultationOptions?.[0]?.price ||
+//         500,
+//       duration:
+//         bookingPayload.duration ||
+//         doctor.consultationOptions?.[0]?.duration ||
+//         30,
+//       payment: {
+//         orderId: razorpay_order_id,
+//         paymentId: razorpay_payment_id,
+//         status: "paid",
+//       },
+//     });
+
+//     console.log("✅ Booking created:", booking._id);
+
+// /* ----------  GOOGLE MEET ---------- */
+// try {
+//   const meetLink = doctor.meetLink;
+//   booking.meetLink = meetLink;
+//   await booking.save();
+//   console.log("✅ Meet link :", meetLink);
+// } catch (meetErr) {
+//   console.error("⚠️ Meet generation failed:", meetErr.message);
+// }
+
+// /* ---------- EMAIL DOCTOR ---------- */
+// try {
+//   await notifyDoctorByEmail({
+//     doctor,
+//     booking,
+//     employeeName: booking.name,
+//   });
+//   console.log("✅ Doctor email sent successfully to:", doctor.email);
+// } catch (e) {
+//   console.error("⚠️ Doctor email failed:", e);
+// }
+
+//     /* ---------- SEND WHATSAPP ---------- */
+//     try {
+//       const employee = await Employee.findById(booking.employeeId);
+
+//       if (employee?.phone) {
+//         await sendBookingConfirmation(employee.phone, {
+//           employeeName: booking.name,
+//           doctorName: doctor.name,
+//           date: booking.date,
+//           time: booking.slot,
+//           mode: booking.mode,
+//           meetLink: booking.meetLink,
+//         });
+//       }
+//     } catch (wpErr) {
+//       console.error("⚠️ WhatsApp failed:", wpErr.message);
+//     }
+
+//     return res.status(200).json({
+//       success: true,
+//       booking,
+//     });
+//   } catch (err) {
+//     console.error("❌ Verify & book error:", err.message);
+//     return res.status(500).json({
+//       success: false,
+//       message: "Booking failed after payment",
+//     });
+//   }
+// });
+
 router.post("/verify-and-book", async (req, res) => {
   try {
     const {
@@ -348,6 +523,14 @@ router.post("/verify-and-book", async (req, res) => {
       return res.status(404).json({ message: "Doctor not found" });
     }
 
+    /* ---------- FINAL AMOUNT WITH 18% GST ---------- */
+    const baseAmount =
+      bookingPayload.price ||
+      doctor.consultationOptions?.[0]?.price ||
+      500;
+
+    const finalAmount = baseAmount + baseAmount * 0.18;
+
     /* ---------- CREATE BOOKING ---------- */
     const booking = await Booking.create({
       doctorId: bookingPayload.doctorId,
@@ -359,14 +542,15 @@ router.post("/verify-and-book", async (req, res) => {
       date: bookingPayload.date,
       slot: bookingPayload.slot,
       mode: bookingPayload.mode,
-      amount:
-        bookingPayload.price ||
-        doctor.consultationOptions?.[0]?.price ||
-        500,
+
+      // SAVE FINAL PAID AMOUNT
+      amount: finalAmount.toFixed(0),
+
       duration:
         bookingPayload.duration ||
         doctor.consultationOptions?.[0]?.duration ||
         30,
+
       payment: {
         orderId: razorpay_order_id,
         paymentId: razorpay_payment_id,
@@ -376,27 +560,27 @@ router.post("/verify-and-book", async (req, res) => {
 
     console.log("✅ Booking created:", booking._id);
 
-/* ----------  GOOGLE MEET ---------- */
-try {
-  const meetLink = doctor.meetLink;
-  booking.meetLink = meetLink;
-  await booking.save();
-  console.log("✅ Meet link :", meetLink);
-} catch (meetErr) {
-  console.error("⚠️ Meet generation failed:", meetErr.message);
-}
+    /* ---------- GOOGLE MEET ---------- */
+    try {
+      const meetLink = doctor.meetLink;
+      booking.meetLink = meetLink;
+      await booking.save();
+      console.log("✅ Meet link :", meetLink);
+    } catch (meetErr) {
+      console.error("⚠️ Meet generation failed:", meetErr.message);
+    }
 
-/* ---------- EMAIL DOCTOR ---------- */
-try {
-  await notifyDoctorByEmail({
-    doctor,
-    booking,
-    employeeName: booking.name,
-  });
-  console.log("✅ Doctor email sent successfully to:", doctor.email);
-} catch (e) {
-  console.error("⚠️ Doctor email failed:", e);
-}
+    /* ---------- EMAIL DOCTOR ---------- */
+    try {
+      await notifyDoctorByEmail({
+        doctor,
+        booking,
+        employeeName: booking.name,
+      });
+      console.log("✅ Doctor email sent successfully to:", doctor.email);
+    } catch (e) {
+      console.error("⚠️ Doctor email failed:", e);
+    }
 
     /* ---------- SEND WHATSAPP ---------- */
     try {
@@ -428,6 +612,7 @@ try {
     });
   }
 });
+
 
 
 /* ------------------------------------------------
