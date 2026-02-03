@@ -17,6 +17,7 @@ import customParseFormat from "dayjs/plugin/customParseFormat.js";
 dayjs.extend(customParseFormat);
 dayjs.extend(utc);
 dayjs.extend(timezone);
+const IST = "Asia/Kolkata";
 const router = express.Router();
 
 const authMiddleware = (req, res, next) => {
@@ -1309,6 +1310,86 @@ router.get("/:id/available-dates/employee", async (req, res) => {
 // });
 
 
+// router.get("/:id/availabilitybtoc", async (req, res) => {
+//   try {
+//     const doctor = await btocDoctor.findById(req.params.id);
+//     if (!doctor) {
+//       return res.status(404).json({ message: "Doctor not found" });
+//     }
+
+//     /* -----------------------------
+//        1️⃣ Generate raw availability
+//     ------------------------------*/
+//     let availability = {};
+//     if (typeof doctor.getUpcomingAvailability === "function") {
+//       availability = await doctor.getUpcomingAvailability(30);
+//     }
+
+//     /* -----------------------------
+//        2️⃣ Fetch bookings
+//     ------------------------------*/
+//     const bookings = await Booking.find({
+//       doctorId: doctor._id,
+//       status: { $ne: "cancelled" }
+//     });
+
+//     /* -----------------------------
+//        3️⃣ Helpers
+//     ------------------------------*/
+//     const normalizeSlot = (s) => s.replace(/\s+/g, " ").trim();
+//     const normalizeDate = (d) =>
+//       new Date(d).toISOString().slice(0, 10);
+
+//     // 🔥 Universal 4-hour buffer (works in UTC & IST)
+//     const nowPlusBuffer = dayjs().add(4, "hour");
+
+//     /* -----------------------------
+//        4️⃣ Remove booked + <4hr slots
+//     ------------------------------*/
+//     const availableSlots = {};
+
+//     for (const [date, slots] of Object.entries(availability)) {
+//       const bookedSlots = bookings
+//         .filter((b) => normalizeDate(b.date) === date)
+//         .map((b) => normalizeSlot(b.slot));
+
+//       availableSlots[date] = (slots || []).filter((s) => {
+//         const slotStr =
+//           typeof s === "string"
+//             ? normalizeSlot(s)
+//             : normalizeSlot(`${s.startTime} - ${s.endTime}`);
+
+//         // ❌ remove already booked slots
+//         if (bookedSlots.includes(slotStr)) return false;
+
+//         // ✅ build full slot datetime
+//         const startTime = slotStr.split("-")[0].trim();
+
+//         const slotDateTime = dayjs(
+//           `${date} ${startTime}`,
+//           ["YYYY-MM-DD HH:mm", "YYYY-MM-DD h:mm A"],
+//           true // strict parsing
+//         );
+
+//         // ❌ safety guard (parsing failure)
+//         if (!slotDateTime.isValid()) return false;
+
+//         // 🔥 block slots within next 4 hours
+//         if (slotDateTime.isBefore(nowPlusBuffer)) {
+//           return false;
+//         }
+
+//         return true;
+//       });
+//     }
+
+//     res.json(availableSlots);
+//   } catch (err) {
+//     console.error("❌ Error fetching availability:", err);
+//     res.status(500).json({ error: err.message });
+//   }
+// });
+
 router.get("/:id/availabilitybtoc", async (req, res) => {
   try {
     const doctor = await btocDoctor.findById(req.params.id);
@@ -1333,17 +1414,17 @@ router.get("/:id/availabilitybtoc", async (req, res) => {
     });
 
     /* -----------------------------
-       3️⃣ Helpers
+       3️⃣ Helpers (IST SAFE)
     ------------------------------*/
     const normalizeSlot = (s) => s.replace(/\s+/g, " ").trim();
     const normalizeDate = (d) =>
-      new Date(d).toISOString().slice(0, 10);
+      dayjs(d).tz(IST).format("YYYY-MM-DD");
 
-    // 🔥 Universal 4-hour buffer (works in UTC & IST)
-    const nowPlusBuffer = dayjs().add(4, "hour");
+    // 🔥 FIX: buffer calculated in IST
+    const nowPlusBuffer = dayjs().tz(IST).add(4, "hour");
 
     /* -----------------------------
-       4️⃣ Remove booked + <4hr slots
+       4️⃣ Filter slots
     ------------------------------*/
     const availableSlots = {};
 
@@ -1352,34 +1433,43 @@ router.get("/:id/availabilitybtoc", async (req, res) => {
         .filter((b) => normalizeDate(b.date) === date)
         .map((b) => normalizeSlot(b.slot));
 
-      availableSlots[date] = (slots || []).filter((s) => {
+      availableSlots[date] = [];
+
+      for (const s of slots || []) {
         const slotStr =
           typeof s === "string"
             ? normalizeSlot(s)
             : normalizeSlot(`${s.startTime} - ${s.endTime}`);
 
-        // ❌ remove already booked slots
-        if (bookedSlots.includes(slotStr)) return false;
+        if (bookedSlots.includes(slotStr)) continue;
 
-        // ✅ build full slot datetime
-        const startTime = slotStr.split("-")[0].trim();
+        const [startTime, endTime] = slotStr
+          .split("-")
+          .map((t) => t.trim());
 
-        const slotDateTime = dayjs(
+        // 🔥 FIX: parse slot time in IST
+        const slotDateTime = dayjs.tz(
           `${date} ${startTime}`,
-          ["YYYY-MM-DD HH:mm", "YYYY-MM-DD h:mm A"],
-          true // strict parsing
+          "YYYY-MM-DD HH:mm",
+          IST
         );
 
-        // ❌ safety guard (parsing failure)
-        if (!slotDateTime.isValid()) return false;
+        if (!slotDateTime.isValid()) continue;
+        if (slotDateTime.isBefore(nowPlusBuffer)) continue;
 
-        // 🔥 block slots within next 4 hours
-        if (slotDateTime.isBefore(nowPlusBuffer)) {
-          return false;
-        }
+        availableSlots[date].push({
+          startTime,
+          endTime,
+          slotDuration: dayjs(endTime, "HH:mm").diff(
+            dayjs(startTime, "HH:mm"),
+            "minute"
+          )
+        });
+      }
 
-        return true;
-      });
+      if (availableSlots[date].length === 0) {
+        delete availableSlots[date];
+      }
     }
 
     res.json(availableSlots);
@@ -1388,7 +1478,6 @@ router.get("/:id/availabilitybtoc", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
 
 
 // router.get("/:id/availabilitybtoc/nonOffer", async (req, res) => {
@@ -1470,13 +1559,118 @@ router.get("/:id/availabilitybtoc", async (req, res) => {
 //   }
 // });
 
+// router.get("/:id/availabilitybtoc/nonOffer", async (req, res) => {
+//   try {
+//     console.log("➡️ HIT availabilitybtoc/nonOffer route");
+
+//     const doctor = await btocDoctor.findById(req.params.id);
+//     if (!doctor) {
+//       console.log("❌ Doctor not found");
+//       return res.status(404).json({ message: "Doctor not found" });
+//     }
+
+//     /* -----------------------------
+//        1️⃣ Generate raw availability
+//     ------------------------------*/
+//     let availability = {};
+//     if (typeof doctor.getUpcomingAvailability45 === "function") {
+//       availability = await doctor.getUpcomingAvailability45(30);
+//     }
+
+//     console.log("📅 RAW AVAILABILITY:", availability);
+
+//     /* -----------------------------
+//        2️⃣ Fetch bookings
+//     ------------------------------*/
+//     const bookings = await Booking.find({
+//       doctorId: doctor._id,
+//       status: { $ne: "cancelled" }
+//     });
+
+//     console.log("📌 BOOKINGS:", bookings.length);
+
+//     /* -----------------------------
+//        3️⃣ Helpers
+//     ------------------------------*/
+//     const normalizeSlot = (s) => s.replace(/\s+/g, " ").trim();
+//     const normalizeDate = (d) =>
+//       new Date(d).toISOString().slice(0, 10);
+
+//     const nowPlusBuffer = dayjs().add(4, "hour");
+//     console.log("⏰ NOW + 4 HOURS:", nowPlusBuffer.format());
+
+//     /* -----------------------------
+//        4️⃣ Remove booked + <4hr slots
+//     ------------------------------*/
+//     const availableSlots = {};
+
+//     for (const [date, slots] of Object.entries(availability)) {
+//       console.log("📆 CHECKING DATE:", date);
+
+//       const bookedSlots = bookings
+//         .filter((b) => normalizeDate(b.date) === date)
+//         .map((b) => normalizeSlot(b.slot));
+
+//       availableSlots[date] = (slots || []).filter((s) => {
+//         const slotStr =
+//           typeof s === "string"
+//             ? normalizeSlot(s)
+//             : normalizeSlot(`${s.startTime} - ${s.endTime}`);
+
+//         console.log("➡️ SLOT:", slotStr);
+
+//         // ❌ remove booked slots
+//         if (bookedSlots.includes(slotStr)) {
+//           console.log("❌ BLOCKED (already booked)");
+//           return false;
+//         }
+
+//         const startTime = slotStr.split("-")[0].trim();
+
+//         const slotDateTime = dayjs(
+//           `${date} ${startTime}`,
+//           ["YYYY-MM-DD HH:mm", "YYYY-MM-DD h:mm A"],
+//           true // strict parsing
+//         );
+
+//         console.log(
+//           "🕒 PARSED SLOT TIME:",
+//           slotDateTime.format(),
+//           "VALID:",
+//           slotDateTime.isValid()
+//         );
+
+//         if (!slotDateTime.isValid()) {
+//           console.log("❌ BLOCKED (invalid time parsing)");
+//           return false;
+//         }
+
+//         if (slotDateTime.isBefore(nowPlusBuffer)) {
+//           console.log("❌ BLOCKED (within 4-hour buffer)");
+//           return false;
+//         }
+
+//         console.log("✅ ALLOWED");
+//         return true;
+//       });
+//     }
+
+//     console.log("✅ FINAL AVAILABLE SLOTS:", availableSlots);
+
+//     res.json(availableSlots);
+//   } catch (err) {
+//     console.error("❌ Error fetching availability:", err);
+//     res.status(500).json({ error: err.message });
+//   }
+// });
+
+
 router.get("/:id/availabilitybtoc/nonOffer", async (req, res) => {
   try {
     console.log("➡️ HIT availabilitybtoc/nonOffer route");
 
     const doctor = await btocDoctor.findById(req.params.id);
     if (!doctor) {
-      console.log("❌ Doctor not found");
       return res.status(404).json({ message: "Doctor not found" });
     }
 
@@ -1498,20 +1692,21 @@ router.get("/:id/availabilitybtoc/nonOffer", async (req, res) => {
       status: { $ne: "cancelled" }
     });
 
-    console.log("📌 BOOKINGS:", bookings.length);
+    console.log("📌 BOOKINGS COUNT:", bookings.length);
 
     /* -----------------------------
-       3️⃣ Helpers
+       3️⃣ Helpers (IST SAFE)
     ------------------------------*/
     const normalizeSlot = (s) => s.replace(/\s+/g, " ").trim();
     const normalizeDate = (d) =>
-      new Date(d).toISOString().slice(0, 10);
+      dayjs(d).tz(IST).format("YYYY-MM-DD");
 
-    const nowPlusBuffer = dayjs().add(4, "hour");
-    console.log("⏰ NOW + 4 HOURS:", nowPlusBuffer.format());
+    // 🔥 CRITICAL FIX: buffer calculated in IST
+    const nowPlusBuffer = dayjs().tz(IST).add(4, "hour");
+    console.log("⏰ NOW + 4 HOURS (IST):", nowPlusBuffer.format());
 
     /* -----------------------------
-       4️⃣ Remove booked + <4hr slots
+       4️⃣ Filter + normalize slots
     ------------------------------*/
     const availableSlots = {};
 
@@ -1522,7 +1717,9 @@ router.get("/:id/availabilitybtoc/nonOffer", async (req, res) => {
         .filter((b) => normalizeDate(b.date) === date)
         .map((b) => normalizeSlot(b.slot));
 
-      availableSlots[date] = (slots || []).filter((s) => {
+      availableSlots[date] = [];
+
+      for (const s of slots || []) {
         const slotStr =
           typeof s === "string"
             ? normalizeSlot(s)
@@ -1530,40 +1727,57 @@ router.get("/:id/availabilitybtoc/nonOffer", async (req, res) => {
 
         console.log("➡️ SLOT:", slotStr);
 
-        // ❌ remove booked slots
+        // ❌ already booked
         if (bookedSlots.includes(slotStr)) {
           console.log("❌ BLOCKED (already booked)");
-          return false;
+          continue;
         }
 
-        const startTime = slotStr.split("-")[0].trim();
+        const [startTime, endTime] = slotStr
+          .split("-")
+          .map((t) => t.trim());
 
-        const slotDateTime = dayjs(
+        // 🔥 CRITICAL FIX: parse slot time in IST
+        const slotDateTime = dayjs.tz(
           `${date} ${startTime}`,
-          ["YYYY-MM-DD HH:mm", "YYYY-MM-DD h:mm A"],
-          true // strict parsing
+          "YYYY-MM-DD HH:mm",
+          IST
         );
 
         console.log(
-          "🕒 PARSED SLOT TIME:",
+          "🕒 PARSED SLOT TIME (IST):",
           slotDateTime.format(),
           "VALID:",
           slotDateTime.isValid()
         );
 
         if (!slotDateTime.isValid()) {
-          console.log("❌ BLOCKED (invalid time parsing)");
-          return false;
+          console.log("❌ BLOCKED (invalid parsing)");
+          continue;
         }
 
         if (slotDateTime.isBefore(nowPlusBuffer)) {
           console.log("❌ BLOCKED (within 4-hour buffer)");
-          return false;
+          continue;
         }
 
         console.log("✅ ALLOWED");
-        return true;
-      });
+
+        // ✅ FRONTEND-COMPATIBLE OBJECT
+        availableSlots[date].push({
+          startTime,
+          endTime,
+          slotDuration: dayjs(endTime, "HH:mm").diff(
+            dayjs(startTime, "HH:mm"),
+            "minute"
+          )
+        });
+      }
+
+      // ❌ remove empty dates
+      if (availableSlots[date].length === 0) {
+        delete availableSlots[date];
+      }
     }
 
     console.log("✅ FINAL AVAILABLE SLOTS:", availableSlots);
@@ -1574,6 +1788,7 @@ router.get("/:id/availabilitybtoc/nonOffer", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
 
 
 // router.get("/:id/availabilitybtoc/nonOffer", async (req, res) => {
