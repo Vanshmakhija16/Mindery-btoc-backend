@@ -12,7 +12,9 @@ import Booking from "../models/Booking.js";
 import dayjs from "dayjs";
 import utc from "dayjs/plugin/utc.js";
 import timezone from "dayjs/plugin/timezone.js";
+import customParseFormat from "dayjs/plugin/customParseFormat.js";
 
+dayjs.extend(customParseFormat);
 dayjs.extend(utc);
 dayjs.extend(timezone);
 const router = express.Router();
@@ -1306,6 +1308,7 @@ router.get("/:id/available-dates/employee", async (req, res) => {
 //   }
 // });
 
+
 router.get("/:id/availabilitybtoc", async (req, res) => {
   try {
     const doctor = await btocDoctor.findById(req.params.id);
@@ -1336,7 +1339,7 @@ router.get("/:id/availabilitybtoc", async (req, res) => {
     const normalizeDate = (d) =>
       new Date(d).toISOString().slice(0, 10);
 
-    // 🔥 Universal time buffer (works in UTC & IST)
+    // 🔥 Universal 4-hour buffer (works in UTC & IST)
     const nowPlusBuffer = dayjs().add(4, "hour");
 
     /* -----------------------------
@@ -1355,18 +1358,22 @@ router.get("/:id/availabilitybtoc", async (req, res) => {
             ? normalizeSlot(s)
             : normalizeSlot(`${s.startTime} - ${s.endTime}`);
 
-        // ❌ Remove already booked slots
+        // ❌ remove already booked slots
         if (bookedSlots.includes(slotStr)) return false;
 
-        // ✅ Build full slot datetime
+        // ✅ build full slot datetime
         const startTime = slotStr.split("-")[0].trim();
 
         const slotDateTime = dayjs(
           `${date} ${startTime}`,
-          ["YYYY-MM-DD HH:mm", "YYYY-MM-DD h:mm A"]
+          ["YYYY-MM-DD HH:mm", "YYYY-MM-DD h:mm A"],
+          true // strict parsing
         );
 
-        // 🔥 Block slots within next 4 hours (timezone-safe)
+        // ❌ safety guard (parsing failure)
+        if (!slotDateTime.isValid()) return false;
+
+        // 🔥 block slots within next 4 hours
         if (slotDateTime.isBefore(nowPlusBuffer)) {
           return false;
         }
@@ -1381,6 +1388,7 @@ router.get("/:id/availabilitybtoc", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
 
 
 // router.get("/:id/availabilitybtoc/nonOffer", async (req, res) => {
@@ -1464,8 +1472,11 @@ router.get("/:id/availabilitybtoc", async (req, res) => {
 
 router.get("/:id/availabilitybtoc/nonOffer", async (req, res) => {
   try {
+    console.log("➡️ HIT availabilitybtoc/nonOffer route");
+
     const doctor = await btocDoctor.findById(req.params.id);
     if (!doctor) {
+      console.log("❌ Doctor not found");
       return res.status(404).json({ message: "Doctor not found" });
     }
 
@@ -1477,6 +1488,8 @@ router.get("/:id/availabilitybtoc/nonOffer", async (req, res) => {
       availability = await doctor.getUpcomingAvailability45(30);
     }
 
+    console.log("📅 RAW AVAILABILITY:", availability);
+
     /* -----------------------------
        2️⃣ Fetch bookings
     ------------------------------*/
@@ -1485,6 +1498,8 @@ router.get("/:id/availabilitybtoc/nonOffer", async (req, res) => {
       status: { $ne: "cancelled" }
     });
 
+    console.log("📌 BOOKINGS:", bookings.length);
+
     /* -----------------------------
        3️⃣ Helpers
     ------------------------------*/
@@ -1492,8 +1507,8 @@ router.get("/:id/availabilitybtoc/nonOffer", async (req, res) => {
     const normalizeDate = (d) =>
       new Date(d).toISOString().slice(0, 10);
 
-    // 🔥 UNIVERSAL TIME (works on Azure + local)
     const nowPlusBuffer = dayjs().add(4, "hour");
+    console.log("⏰ NOW + 4 HOURS:", nowPlusBuffer.format());
 
     /* -----------------------------
        4️⃣ Remove booked + <4hr slots
@@ -1501,6 +1516,8 @@ router.get("/:id/availabilitybtoc/nonOffer", async (req, res) => {
     const availableSlots = {};
 
     for (const [date, slots] of Object.entries(availability)) {
+      console.log("📆 CHECKING DATE:", date);
+
       const bookedSlots = bookings
         .filter((b) => normalizeDate(b.date) === date)
         .map((b) => normalizeSlot(b.slot));
@@ -1511,25 +1528,45 @@ router.get("/:id/availabilitybtoc/nonOffer", async (req, res) => {
             ? normalizeSlot(s)
             : normalizeSlot(`${s.startTime} - ${s.endTime}`);
 
-        // ❌ remove booked slots
-        if (bookedSlots.includes(slotStr)) return false;
+        console.log("➡️ SLOT:", slotStr);
 
-        // ✅ create full slot datetime (timezone-safe)
+        // ❌ remove booked slots
+        if (bookedSlots.includes(slotStr)) {
+          console.log("❌ BLOCKED (already booked)");
+          return false;
+        }
+
         const startTime = slotStr.split("-")[0].trim();
 
         const slotDateTime = dayjs(
           `${date} ${startTime}`,
-          ["YYYY-MM-DD HH:mm", "YYYY-MM-DD h:mm A"]
+          ["YYYY-MM-DD HH:mm", "YYYY-MM-DD h:mm A"],
+          true // strict parsing
         );
 
-        // 🔥 BLOCK if slot is within next 4 hours (works everywhere)
-        if (slotDateTime.isBefore(nowPlusBuffer)) {
+        console.log(
+          "🕒 PARSED SLOT TIME:",
+          slotDateTime.format(),
+          "VALID:",
+          slotDateTime.isValid()
+        );
+
+        if (!slotDateTime.isValid()) {
+          console.log("❌ BLOCKED (invalid time parsing)");
           return false;
         }
 
+        if (slotDateTime.isBefore(nowPlusBuffer)) {
+          console.log("❌ BLOCKED (within 4-hour buffer)");
+          return false;
+        }
+
+        console.log("✅ ALLOWED");
         return true;
       });
     }
+
+    console.log("✅ FINAL AVAILABLE SLOTS:", availableSlots);
 
     res.json(availableSlots);
   } catch (err) {
