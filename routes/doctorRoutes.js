@@ -9,7 +9,7 @@ import upload from "../middlewares/upload.js";
 import jwt from "jsonwebtoken";
 import Session from "../models/Session.js";
 import Booking from "../models/Booking.js";
-
+import dayjs from "dayjs";
 const router = express.Router();
 
 const authMiddleware = (req, res, next) => {
@@ -1153,6 +1153,70 @@ router.get("/:id/available-dates/employee", async (req, res) => {
 
 
 
+// router.get("/:id/availabilitybtoc", async (req, res) => {
+//   try {
+//     const doctor = await btocDoctor.findById(req.params.id);
+//     if (!doctor) {
+//       return res.status(404).json({ message: "Doctor not found" });
+//     }
+
+//     /* -----------------------------
+//        1️⃣ Generate raw availability
+//     ------------------------------*/
+//     let availability = {};
+//     if (typeof doctor.getUpcomingAvailability === "function") {
+//       availability = await doctor.getUpcomingAvailability(30);
+//     }
+
+//     /* -----------------------------
+//        2️⃣ Fetch bookings
+//     ------------------------------*/
+//     const bookings = await Booking.find({ doctorId: doctor._id });
+
+//     /* -----------------------------
+//        3️⃣ Helpers (CRITICAL)
+//     ------------------------------*/
+//     const normalizeSlot = (s) =>
+//       s.replace(/\s+/g, " ").trim();
+
+//     const normalizeDate = (d) =>
+//       new Date(d).toISOString().slice(0, 10);
+
+//     /* -----------------------------
+//        4️⃣ Remove booked slots safely
+//     ------------------------------*/
+//     const availableSlots = {};
+
+//     for (const [date, slots] of Object.entries(availability)) {
+//       const bookedSlots = bookings
+//         .filter((b) => normalizeDate(b.date) === date)
+//         .map((b) => normalizeSlot(b.slot));
+
+//       availableSlots[date] = (slots || []).filter((s) => {
+//         const slotStr =
+//           typeof s === "string"
+//             ? normalizeSlot(s)
+//             : normalizeSlot(`${s.startTime} - ${s.endTime}`);
+
+//         return !bookedSlots.includes(slotStr);
+//       });
+//     }
+//        console.log( "availability",availability);
+//     console.log("availableslots",availableSlots);
+
+//     /* -----------------------------
+//        5️⃣ Return ALL dates (important)
+//     ------------------------------*/
+//     res.json( availableSlots);
+ 
+    
+
+//   } catch (err) {
+//     console.error("❌ Error fetching availability:", err);
+//     res.status(500).json({ error: err.message });
+//   }
+// });
+
 router.get("/:id/availabilitybtoc", async (req, res) => {
   try {
     const doctor = await btocDoctor.findById(req.params.id);
@@ -1171,10 +1235,13 @@ router.get("/:id/availabilitybtoc", async (req, res) => {
     /* -----------------------------
        2️⃣ Fetch bookings
     ------------------------------*/
-    const bookings = await Booking.find({ doctorId: doctor._id });
+    const bookings = await Booking.find({
+      doctorId: doctor._id,
+      status: { $ne: "cancelled" } // safe improvement
+    });
 
     /* -----------------------------
-       3️⃣ Helpers (CRITICAL)
+       3️⃣ Helpers
     ------------------------------*/
     const normalizeSlot = (s) =>
       s.replace(/\s+/g, " ").trim();
@@ -1182,8 +1249,12 @@ router.get("/:id/availabilitybtoc", async (req, res) => {
     const normalizeDate = (d) =>
       new Date(d).toISOString().slice(0, 10);
 
+    const now = dayjs();
+    const minAllowedTime = now.add(4, "hour"); // 🔥 4-hour buffer
+    const today = now.format("YYYY-MM-DD");
+
     /* -----------------------------
-       4️⃣ Remove booked slots safely
+       4️⃣ Remove booked + <4hr slots
     ------------------------------*/
     const availableSlots = {};
 
@@ -1198,24 +1269,102 @@ router.get("/:id/availabilitybtoc", async (req, res) => {
             ? normalizeSlot(s)
             : normalizeSlot(`${s.startTime} - ${s.endTime}`);
 
-        return !bookedSlots.includes(slotStr);
+        // ❌ remove already booked slots
+        if (bookedSlots.includes(slotStr)) return false;
+
+        // 🔥 enforce 4-hour rule ONLY for today
+        if (date === today) {
+          const startTime = slotStr.split("-")[0].trim(); // e.g. "18:00"
+          const slotDateTime = dayjs(`${date} ${startTime}`);
+
+          if (slotDateTime.isBefore(minAllowedTime)) {
+            return false;
+          }
+        }
+
+        return true;
       });
     }
-       console.log( "availability",availability);
-    console.log("availableslots",availableSlots);
+
+    console.log("availability", availability);
+    console.log("availableslots", availableSlots);
 
     /* -----------------------------
-       5️⃣ Return ALL dates (important)
+       5️⃣ Return ALL dates
     ------------------------------*/
-    res.json( availableSlots);
- 
-    
-
+    res.json(availableSlots);
   } catch (err) {
     console.error("❌ Error fetching availability:", err);
     res.status(500).json({ error: err.message });
   }
 });
+
+// router.get("/:id/availabilitybtoc/nonOffer", async (req, res) => {
+//   try {
+//     const doctor = await btocDoctor.findById(req.params.id);
+//     if (!doctor) {
+//       return res.status(404).json({ message: "Doctor not found" });
+//     }
+
+//     /* -----------------------------
+//        1️⃣ Generate raw availability
+//     ------------------------------*/
+//     let availability = {};
+//     if (typeof doctor.getUpcomingAvailability === "function") {
+//       availability = await doctor.getUpcomingAvailability45(30);
+//     }
+
+//     /* -----------------------------
+//        2️⃣ Fetch bookings
+//     ------------------------------*/
+//     const bookings = await Booking.find({ doctorId: doctor._id });
+
+//     /* -----------------------------
+//        3️⃣ Helpers (CRITICAL)
+//     ------------------------------*/
+//     const normalizeSlot = (s) =>
+//       s.replace(/\s+/g, " ").trim();
+
+//     const normalizeDate = (d) =>
+//       new Date(d).toISOString().slice(0, 10);
+
+//     /* -----------------------------
+//        4️⃣ Remove booked slots safely
+//     ------------------------------*/
+//     const availableSlots = {};
+
+//     for (const [date, slots] of Object.entries(availability)) {
+//       const bookedSlots = bookings
+//         .filter((b) => normalizeDate(b.date) === date)
+//         .map((b) => normalizeSlot(b.slot));
+
+//       availableSlots[date] = (slots || []).filter((s) => {
+//         const slotStr =
+//           typeof s === "string"
+//             ? normalizeSlot(s)
+//             : normalizeSlot(`${s.startTime} - ${s.endTime}`);
+
+//         return !bookedSlots.includes(slotStr);
+//       });
+//     }
+//        console.log( "availability",availability);
+//     console.log("availableslots",availableSlots);
+
+//     /* -----------------------------
+//        5️⃣ Return ALL dates (important)
+//     ------------------------------*/
+//     res.json( availableSlots);
+ 
+    
+
+//   } catch (err) {
+//     console.error("❌ Error fetching availability:", err);
+//     res.status(500).json({ error: err.message });
+//   }
+// });
+
+// About /View Profile of DR
+
 
 router.get("/:id/availabilitybtoc/nonOffer", async (req, res) => {
   try {
@@ -1228,26 +1377,31 @@ router.get("/:id/availabilitybtoc/nonOffer", async (req, res) => {
        1️⃣ Generate raw availability
     ------------------------------*/
     let availability = {};
-    if (typeof doctor.getUpcomingAvailability === "function") {
+    if (typeof doctor.getUpcomingAvailability45 === "function") {
       availability = await doctor.getUpcomingAvailability45(30);
     }
 
     /* -----------------------------
-       2️⃣ Fetch bookings
+       2️⃣ Fetch bookings (exclude cancelled)
     ------------------------------*/
-    const bookings = await Booking.find({ doctorId: doctor._id });
+    const bookings = await Booking.find({
+      doctorId: doctor._id,
+      status: { $ne: "cancelled" }
+    });
 
     /* -----------------------------
-       3️⃣ Helpers (CRITICAL)
+       3️⃣ Helpers
     ------------------------------*/
-    const normalizeSlot = (s) =>
-      s.replace(/\s+/g, " ").trim();
-
+    const normalizeSlot = (s) => s.replace(/\s+/g, " ").trim();
     const normalizeDate = (d) =>
       new Date(d).toISOString().slice(0, 10);
 
+    const now = dayjs();
+    const minAllowedTime = now.add(4, "hour"); // 🔥 4-hour buffer
+    const today = now.format("YYYY-MM-DD");
+
     /* -----------------------------
-       4️⃣ Remove booked slots safely
+       4️⃣ Remove booked + <4hr slots
     ------------------------------*/
     const availableSlots = {};
 
@@ -1262,26 +1416,32 @@ router.get("/:id/availabilitybtoc/nonOffer", async (req, res) => {
             ? normalizeSlot(s)
             : normalizeSlot(`${s.startTime} - ${s.endTime}`);
 
-        return !bookedSlots.includes(slotStr);
+        // ❌ remove booked slots
+        if (bookedSlots.includes(slotStr)) return false;
+
+        // 🔥 enforce 4-hour rule ONLY for today
+        if (date === today) {
+          const startTime = slotStr.split("-")[0].trim(); // "18:00"
+          const slotDateTime = dayjs(`${date} ${startTime}`);
+
+          if (slotDateTime.isBefore(minAllowedTime)) {
+            return false;
+          }
+        }
+
+        return true;
       });
     }
-       console.log( "availability",availability);
-    console.log("availableslots",availableSlots);
 
     /* -----------------------------
-       5️⃣ Return ALL dates (important)
+       5️⃣ Return filtered slots
     ------------------------------*/
-    res.json( availableSlots);
- 
-    
-
+    res.json(availableSlots);
   } catch (err) {
     console.error("❌ Error fetching availability:", err);
     res.status(500).json({ error: err.message });
   }
 });
-
-// About /View Profile of DR
 
 router.get("/doctors/:id", async (req, res) => {
   try {
