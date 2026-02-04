@@ -919,8 +919,12 @@ router.post("/:slug/submit", async (req, res) => {
     if (!assessment)
       return res.status(404).json({ error: "Assessment not found" });
 
-    const { answers, userEmail, userName } = req.body || {};
+    // Destructure userPhone and userName instead of userEmail
+    const { answers, userPhone, userName } = req.body || {};
+    
+    // Validation checks
     if (!answers) return res.status(400).json({ error: "Answers are required" });
+    if (!userPhone) return res.status(400).json({ error: "Phone number is required" });
 
     // build map
     const questionMap = Object.fromEntries((assessment.questions || []).map(q => [q.id, q]));
@@ -959,7 +963,7 @@ router.post("/:slug/submit", async (req, res) => {
       totalScore += weight;
     }
 
-    // compute domain scores similar to old switch
+    // compute domain scores
     let domainMap = {};
     switch (assessment.slug) {
       case "bdi":
@@ -1006,7 +1010,7 @@ router.post("/:slug/submit", async (req, res) => {
         domainMap = {};
     }
 
-    // domain scores
+    // domain scores calculation
     const domainScores = {};
     for (const [domain, ids] of Object.entries(domainMap)) {
       domainScores[domain] = ids.reduce((sum, id) => {
@@ -1019,7 +1023,7 @@ router.post("/:slug/submit", async (req, res) => {
       }, 0);
     }
 
-    // scoring function fallback — replicate known interpretations
+    // scoring function interpretations
     const interpret = (slug, score) => {
       switch (slug) {
         case "bdi":
@@ -1059,9 +1063,9 @@ router.post("/:slug/submit", async (req, res) => {
     const { status, message } = interpret(assessment.slug, totalScore);
     const percentage = assessment.maxScore ? Math.round((totalScore / assessment.maxScore) * 100) : 0;
 
-    // create report document (use field names expected by Report schema)
+    // Create report document with userPhone (Ensure your Schema matches this field name)
     const newReport = new Report({
-      userEmail: userEmail || req.body.email || "unknown",
+      userPhone: userPhone || req.body.phone || "unknown",
       userName: userName || req.body.name || "Guest",
       assessmentSlug: assessment.slug,
       assessmentTitle: assessment.title,
@@ -1075,7 +1079,7 @@ router.post("/:slug/submit", async (req, res) => {
 
     await newReport.save();
 
-    // respond with same shape your frontend uses (report data + metadata)
+    // respond with report data
     res.json({
       _id: newReport._id,
       score: totalScore,
@@ -1095,44 +1099,7 @@ router.post("/:slug/submit", async (req, res) => {
 
 
 
-// Assign assessment to a student (always unlocked)
 
-// router.post("/assign/:studentId", async (req, res) => {
-//   try {
-//     const { studentId } = req.params;
-//     const { assessmentSlug } = req.body;
-
-//     // Find the student
-//     const student = await User.findById(studentId);
-//     if (!student || student.role !== "student") {
-//       return res.status(404).json({ error: "Student not found" });
-//     }
-
-//     // Find the assessment
-//       const assessment = await Assessment.findOne({ slug: assessmentSlug }).lean();
-//       if (!assessment) {
-//         return res.status(404).json({ error: "Assessment not found" });
-//       }
-
-
-//     // Check if already assigned by assessmentId
-//     const already = student.assessments?.find((a) => a.assessmentId === assessment.id);
-//     if (already) {
-//       return res.status(400).json({ error: "Assessment already assigned" });
-//     }
-
-//     // ✅ Assign as unlocked by default (forever)
-//     if (!student.assessments) student.assessments = [];
-//     student.assessments.push({ assessmentId: assessment.id, status: "locked" });
-//     await student.save();
-
-//     res.json({ message: "Assessment assigned successfully", assessments: student.assessments });
-//   } catch (err) {
-//     res.status(500).json({ error: err.message });
-//   }
-// });
-
-// ----------------- Part 6: POST /assign/:studentId -----------------
 router.post("/assign/:studentId", async (req, res) => {
   try {
     const { studentId } = req.params;
@@ -1165,54 +1132,8 @@ router.post("/assign/:studentId", async (req, res) => {
 });
 
 
-// router.put("/unlock/:studentId/:assessmentId", async (req, res) => {
-//   try {
-//     const { studentId, assessmentId } = req.params;
-
-//     // 🧠 Optional but strongly recommended: only doctors can unlock
-//     if (req.user.role !== "doctor") {
-//       return res.status(403).json({ error: "Access denied: only doctors can unlock assessments" });
-//     }
-
-//     // Find the student
-//     const student = await User.findById(studentId);
-//     if (!student || student.role !== "student") {
-//       return res.status(404).json({ error: "Student not found" });
-//     }
-
-//     // Find assessment in student's array
-//     const assessment = student.assessments.find(
-//       (a) => a.assessmentId === parseInt(assessmentId)
-//     );
-
-//     if (!assessment) {
-//       return res.status(404).json({ error: "Assessment not assigned to this student" });
-//     }
-
-//     // Check if it's already unlocked
-//     if (assessment.status === "unlocked") {
-//       return res.json({
-//         message: "Assessment is already unlocked",
-//         assessments: student.assessments,
-//       });
-//     }
-
-//     // Unlock it
-//     assessment.status = "unlocked";
-//     await student.save();
-
-//     res.json({
-//       message: "Assessment unlocked successfully",
-//       assessments: student.assessments,
-//     });
-//   } catch (err) {
-//     console.error(err);
-//     res.status(500).json({ error: err.message });
-//   }
-// });
 
 
-// ----------------- Part 7: PUT /unlock/:studentId/:assessmentId -----------------
 router.put("/unlock/:studentId/:assessmentId", authMiddleware, async (req, res) => {
   try {
     const { studentId, assessmentId } = req.params;
@@ -1246,43 +1167,8 @@ router.put("/unlock/:studentId/:assessmentId", authMiddleware, async (req, res) 
 
 
 
-// router.put("/unlock-by-assessment/:assessmentId", authMiddleware, async (req, res) => {
-//   try {
-//     if (req.user.role !== "doctor") {
-//       return res.status(403).json({ error: "Access denied: only doctors can unlock assessments" });
-//     }
-
-//     const { assessmentId } = req.params;
-
-//     // Update all students who have this assessment assigned
-//     const result = await User.updateMany(
-//       { role: "student", "assessments.assessmentId": parseInt(assessmentId) },
-//       { $set: { "assessments.$.status": "unlocked" } }
-//     );
-
-//     res.json({
-//       message: `Assessment ${assessmentId} unlocked for ${result.modifiedCount} students`,
-//     });
-//   } catch (err) {
-//     console.error(err);
-//     res.status(500).json({ error: err.message });
-//   }
-// });
 
 
-// Get all Assesments
-
-// router.get("/getall", (req, res) => {
-//   try {
-//     res.status(200).json(assessments);
-//   } catch (error) {
-//     console.error("Error fetching assessments:", error);
-//     res.status(500).json({ message: "Server Error" });
-//   }
-// });
-
-
-// ----------------- Part 8: PUT /unlock-by-assessment/:assessmentId -----------------
 router.put("/unlock-by-assessment/:assessmentId", authMiddleware, async (req, res) => {
   try {
     if (req.userRole !== "doctor" && req.user?.role !== "doctor") {
@@ -1305,19 +1191,6 @@ router.put("/unlock-by-assessment/:assessmentId", authMiddleware, async (req, re
 });
 
 
-// router.get("/getall", async (req, res) => {
-//   try {
-//     const all = await Assessment.find({}).lean();
-//     res.status(200).json(all);
-//   } catch (error) {
-//     console.error("Error fetching assessments:", error);
-//     res.status(500).json({ message: "Server Error" });
-//   }
-// });
-
-
-//Report for User Profile 
-
 
 // ----------------- Part 9: GET /getall -----------------
 router.get("/getall", async (req, res) => {
@@ -1331,42 +1204,26 @@ router.get("/getall", async (req, res) => {
 });
 
 
-// router.get("/user/reports", async (req, res) => {
-//   try {
-//     const reports = await Report.find({ userEmail: req.query.email })
-//       .sort({ submittedAt: -1 });
-
-//     res.json(reports);
-//   } catch (err) {
-//     res.status(500).json({ error: err.message });
-//   }
-// });
 
 
-// router.get("/report/:id", async (req, res) => {
-//   try {
-//     const report = await Report.findById(req.params.id);
-
-//     if (!report) {
-//       return res.status(404).json({ message: "Report not found" });
-//     }
-
-//     res.json(report);
-//   } catch (error) {
-//     res.status(500).json({ message: "Error fetching report", error });
-//   }
-// });
-
-
-// ----------------- Part 10: Reports -----------------
 router.get("/user/reports", async (req, res) => {
   try {
-    const reports = await Report.find({ userEmail: req.query.email })
-      .sort({ submittedAt: -1 });
+    const { phone } = req.query;
+
+    // 1. Check if phone is provided to avoid unnecessary DB calls
+    if (!phone) {
+      return res.status(400).json({ error: "Phone number is required" });
+    }
+
+    // 2. Fetch reports (using lean() for better performance if you only need read-only data)
+    const reports = await Report.find({ userPhone: phone })
+      .sort({ createdAt: -1 }) // Double check if your field is 'submittedAt' or 'createdAt'
+      .lean();
+
     res.json(reports);
   } catch (err) {
     console.error("Error fetching user reports:", err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Internal Server Error" });
   }
 });
 

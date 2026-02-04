@@ -299,4 +299,26 @@ router.get("/employee/:employeeId", async (req, res) => {
 });
 
 
+
+router.get("/btocbookings-admin", async (req, res) => {
+  try {
+    const bookings = await Booking.find()
+      .sort({ createdAt: -1 }) // newest first
+      .populate("doctorId", "name email")
+      .populate("employeeId", "name email phone");
+
+    res.status(200).json({
+      success: true,
+      count: bookings.length,
+      bookings,
+    });
+  } catch (err) {
+    console.error("❌ Fetch bookings error:", err.message);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch bookings",
+    });
+  }
+});
+
 export default router;

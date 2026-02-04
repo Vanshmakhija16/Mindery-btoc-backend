@@ -2,8 +2,14 @@ import mongoose from "mongoose";
 
 const reportSchema = new mongoose.Schema(
   {
-    userEmail: { type: String, required: true },
-    userName: { type: String, required: true },
+userPhone: { 
+  type: String, 
+  required: true, 
+  unique: true, // Prevents duplicate entries for the same number
+  trim: true    // Removes accidental spaces at the start or end
+},
+
+userName: { type: String, required: true },
 
     assessmentSlug: { type: String, required: true }, 
     assessmentTitle: { type: String },
