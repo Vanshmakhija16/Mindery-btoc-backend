@@ -27,10 +27,16 @@ meetLink: {
   type: String,
 },
 
+reminderAt: {
+  type: Date,
+},
 
+reminderSent: {
+  type: Boolean,
+  default: false,
+},
 
-  // ✅ ADD THESE
-  name: {
+name: {
     type: String,
     required: true,
     trim: true,
@@ -55,6 +61,20 @@ email: {
     paymentId: String,
     status: String,
   },
+//   whatsappLogs: [
+//   {
+//     to: String,            // phone number
+//     type: String,          // "confirmation" | "reminder"
+//     template: String,      // template name
+//     params: [String],      // 👈 to rebuild exact message
+//     status: String,        // "sent" | "failed"
+//     sentAt: {
+//       type: Date,
+//       default: Date.now,
+//     },
+//   },
+// ],
+
 }, { timestamps: true });
 
 

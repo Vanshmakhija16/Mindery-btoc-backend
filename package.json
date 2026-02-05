@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "type": "module",
-    "engines": {
+  "engines": {
     "node": "20.x"
   },
   "scripts": {
@@ -30,6 +30,7 @@
     "mongoose": "^8.18.0",
     "morgan": "^1.10.1",
     "multer": "^2.0.2",
+    "node-cron": "^4.2.1",
     "nodemailer": "^7.0.10",
     "path": "^0.12.7",
     "razorpay": "^2.9.6",

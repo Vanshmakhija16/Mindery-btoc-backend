@@ -2,16 +2,24 @@ import { sendEmail } from "./emails.js";
 
 export async function notifyDoctorByEmail({ doctor, booking, employeeName }) {
   try {
-    if (!doctor?.email) {
-      console.log("⚠️ Doctor email missing, cannot send mail");
-      return;
-    }
+const recipients = [
+  doctor.email,
+  process.env.ADMIN_EMAIL_1,
+  process.env.ADMIN_EMAIL_2,
+  process.env.ADMIN_EMAIL_3,
+].filter(Boolean);
+
+if (!recipients.length) {
+  console.log("⚠️ No email recipients available");
+  return;
+}
+
 
     const modeText = booking?.mode || "online";
     const link = booking?.meetLink || "Link will be shared shortly";
 
     await sendEmail({
-      to: doctor.email,
+      to: recipients,
       subject: `New Booking: ${booking.date} ${booking.slot}`,
       text: `Hi Dr. ${doctor.name},
 
@@ -49,7 +57,7 @@ Team Mindery`,
       `,
     });
 
-    console.log("✅ Doctor email triggered to:", doctor.email);
+  console.log("✅ Booking email sent to:", recipients.join(", "));
   } catch (err) {
     console.error("❌ notifyDoctorByEmail failed:", err);
     throw err;

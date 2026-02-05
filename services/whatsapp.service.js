@@ -206,25 +206,61 @@ export const sendBookingConfirmation = async (fullPhone, bookingDetails) => {
 };
 
 
-export const sendBookingReminder = async (phone, bookingDetails) => {
-  const { doctorName, date, time, mode, bookingId } = bookingDetails;
+// export const sendBookingReminder = async (phone, bookingDetails) => {
+//   const { doctorName, date, time, mode, bookingId } = bookingDetails;
 
-  const messageBody = `⏰ *Booking Reminder*
+//   const messageBody = `⏰ *Booking Reminder*
 
-Your session with Dr. ${doctorName} is coming up!
+// Your session with Dr. ${doctorName} is coming up!
 
-📅 *Date:* ${date}
-⏰ *Time:* ${time}
-📱 *Mode:* ${mode}
+// 📅 *Date:* ${date}
+// ⏰ *Time:* ${time}
+// 📱 *Mode:* ${mode}
 
-Please be ready 5 minutes before your scheduled time.
+// Please be ready 5 minutes before your scheduled time.
 
-📋 *Booking ID:* ${bookingId}`;
+// 📋 *Booking ID:* ${bookingId}`;
 
-  return sendWhatsAppMessage(phone, messageBody);
-};
+//   return sendWhatsAppMessage(phone, messageBody);
+// };
 
 // Send cancellation notice via WhatsApp
+
+export const sendBookingReminder = async (fullPhone, bookingDetails) => {
+  const to = String(fullPhone).replace(/\D/g, "");
+
+  const { doctorName, date, time, mode, bookingId } = bookingDetails;
+
+  const payload = {
+    api_key: process.env.GETGABS_API_KEY,
+    sender: process.env.GETGABS_SENDER,
+    campaign_id: process.env.GETGABS_CAMPAIGN_ID,
+    messaging_product: "whatsapp",
+    recipient_type: "individual",
+    to,
+    type: "template",
+    template: {
+      name: "session_details", // 🔴 MUST be approved in GetGabs
+      language: { code: "en" },
+      components: [
+        {
+          type: "body",
+          parameters: [
+            { type: "text", text: doctorName },
+            { type: "text", text: date },
+            { type: "text", text: time },
+            { type: "text", text: mode },
+            { type: "text", text: bookingId },
+          ],
+        },
+      ],
+    },
+  };
+
+  return axios.post(GETGABS_URL, payload);
+};
+
+
 export const sendBookingCancellation = async (phone, bookingDetails) => {
   const { doctorName, date, bookingId, refundAmount } = bookingDetails;
 
