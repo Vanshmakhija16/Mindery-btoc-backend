@@ -33,7 +33,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import adminAuthRoutes from "./routes/adminauthRoutes.js";
 import contactRoutes from "./routes/contact.js"
-import messagesRoutes from "./routes/messages.js"
+// import messagesRoutes from "./routes/messages.js"
 import "./cron/bookingReminder.cron.js";
 
 
