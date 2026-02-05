@@ -138,7 +138,7 @@ app.use("/api/jobs", jobRoutes);
 app.use("/api/clinical-reports", clinicalReportRoutes);
 app.use("/api/adminAuth", adminAuthRoutes);
 app.use("/api/contact", contactRoutes);
-app.use("/api/messages",messagesRoutes);
+// app.use("/api/messages",messagesRoutes);
 
 
 
