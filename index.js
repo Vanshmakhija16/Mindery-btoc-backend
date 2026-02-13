@@ -33,8 +33,8 @@ import path from "path";
 import { fileURLToPath } from "url";
 import adminAuthRoutes from "./routes/adminauthRoutes.js";
 import contactRoutes from "./routes/contact.js"
-// import messagesRoutes from "./routes/messages.js"
-import "./cron/bookingReminder.cron.js";
+import therapyRequestRoutes from "./routes/therapyRequestRoutes.js";
+
 
 
 // ✅ for __dirname in ES modules
@@ -138,7 +138,7 @@ app.use("/api/jobs", jobRoutes);
 app.use("/api/clinical-reports", clinicalReportRoutes);
 app.use("/api/adminAuth", adminAuthRoutes);
 app.use("/api/contact", contactRoutes);
-// app.use("/api/messages",messagesRoutes);
+app.use("/api/requests", therapyRequestRoutes);
 
 
 

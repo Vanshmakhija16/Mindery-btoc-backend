@@ -7,6 +7,7 @@ import Employee from "../models/Employee.js";
 import { sendBookingConfirmation } from "../services/whatsapp.service.js";
 import { generateGoogleMeetLink } from "../googlemeet.js";
 import { notifyDoctorByEmail } from "../utils/notifyDoctor.js"; // adjust path
+import TherapyRequest from "../models/TherapyRequest.js";
 
 const router = express.Router();
 
@@ -119,6 +120,159 @@ router.post("/create-order", async (req, res) => {
 
 
 
+
+
+
+// router.post("/verify-and-book", async (req, res) => {
+//   try {
+//     const {
+//       razorpay_order_id,
+//       razorpay_payment_id,
+//       razorpay_signature,
+//       bookingPayload,
+//     } = req.body;
+
+//     if (
+//       !razorpay_order_id ||
+//       !razorpay_payment_id ||
+//       !razorpay_signature ||
+//       !bookingPayload
+//     ) {
+//       return res.status(400).json({ message: "Invalid payment payload" });
+//     }
+
+//     /* ---------- PREVENT DUPLICATE BOOKINGS ---------- */
+//     let booking = await Booking.findOne({
+//       "payment.paymentId": razorpay_payment_id,
+//     });
+
+//     if (!booking) {
+//       /* ---------- VERIFY RAZORPAY ---------- */
+//       const sign = `${razorpay_order_id}|${razorpay_payment_id}`;
+//       const expectedSign = crypto
+//         .createHmac("sha256", process.env.RAZORPAY_SECRET)
+//         .update(sign)
+//         .digest("hex");
+
+//       if (expectedSign !== razorpay_signature) {
+//         return res.status(400).json({ message: "Payment verification failed" });
+//       }
+
+//       /* ---------- FETCH DOCTOR ---------- */
+//       const doctor = await btocDoctor.findById(bookingPayload.doctorId);
+//       if (!doctor) {
+//         return res.status(404).json({ message: "Doctor not found" });
+//       }
+
+//       /* ---------- AMOUNT ---------- */
+//       const baseAmount =
+//         bookingPayload.price ||
+//         doctor.consultationOptions?.[0]?.price ||
+//         500;
+
+//       const finalAmount = baseAmount + baseAmount * 0.18;
+
+//       /* ---------- CREATE BOOKING ---------- */
+//       booking = new Booking({
+//         doctorId: bookingPayload.doctorId,
+//         doctorName: doctor.name,
+//         employeeId: bookingPayload.employeeId,
+//         name: bookingPayload.name,          // 👈 client name
+//         phone: bookingPayload.phone,
+//         email: bookingPayload.email || null,
+//         date: bookingPayload.date,
+//         slot: bookingPayload.slot,
+//         mode: bookingPayload.mode,
+//         amount: Number(finalAmount.toFixed(0)),
+//         duration:
+//           bookingPayload.duration ||
+//           doctor.consultationOptions?.[0]?.duration ||
+//           30,
+//         payment: {
+//           orderId: razorpay_order_id,
+//           paymentId: razorpay_payment_id,
+//           status: "paid",
+//         },
+//         meetLink: doctor.meetLink,
+//         confirmationSent: false,
+//         reminderSent: false,
+//       });
+
+// /* ---------- ⏰ REMINDER TIME (IST) ---------- */
+// const [startTime] = booking.slot.split(" - "); // "16:30"
+// const [hours, minutes] = startTime.split(":");
+
+// // Create session datetime explicitly in IST
+// const sessionDateTime = new Date(
+//   `${booking.date}T${hours}:${minutes}:00+05:30`
+// );
+
+// // 16:30 → 12:24  (4h 6m before)
+// const REMINDER_OFFSET_MS =
+//   (4 * 60 * 60 * 1000) + (6 * 60 * 1000);
+
+// booking.reminderAt = new Date(
+//   sessionDateTime.getTime() - REMINDER_OFFSET_MS
+// );
+
+
+
+//       /* ---------- EMAIL DOCTOR ---------- */
+
+//       /* ---------- EMAIL DOCTOR ---------- */
+//       notifyDoctorByEmail({
+//         doctor,
+//         booking,
+//         employeeName: booking.name, // ✅ PASS IT
+//       }).catch(() => {});
+//           }
+
+//     /* ---------- 🛡️ CONFIRMATION SAFETY GUARD ---------- */
+//     // Confirmation must ONLY happen immediately after booking
+//     const createdAgoMs = Date.now() - booking.createdAt.getTime();
+//     if (createdAgoMs > 2 * 60 * 1000) {
+//       console.warn("⚠️ Confirmation blocked (late execution):", booking._id);
+//       return res.status(200).json({ success: true, booking });
+//     }
+
+//     /* ---------- ✅ WHATSAPP CONFIRMATION (ONCE ONLY) ---------- */
+//     if (!booking.confirmationSent) {
+//       const employee = await Employee.findById(booking.employeeId);
+
+//       const toPhone = String(
+//         booking.phone || employee?.phone || ""
+//       ).replace(/\D/g, "");
+
+//       if (toPhone) {
+// await sendBookingConfirmation(toPhone, {
+//   employeeName: booking.name,
+//   doctorName: booking.doctorName,
+//   date: booking.date,
+//   time: booking.slot,
+//   meetLink: booking.meetLink,
+//   __alreadyConfirmed: booking.confirmationSent === true,
+// });
+
+
+//         booking.confirmationSent = true;
+//         await booking.save();
+
+//         console.log("✅ Confirmation sent for booking:", booking._id);
+//       }
+//     }
+
+//     return res.status(200).json({ success: true, booking });
+
+//   } catch (err) {
+//     console.error("Verify & book error:", err);
+//     return res.status(500).json({
+//       success: false,
+//       message: "Booking failed after payment",
+//     });
+//   }
+// });
+
+
 router.post("/verify-and-book", async (req, res) => {
   try {
     const {
@@ -137,170 +291,130 @@ router.post("/verify-and-book", async (req, res) => {
       return res.status(400).json({ message: "Invalid payment payload" });
     }
 
-    /* ---------- VERIFY RAZORPAY SIGNATURE ---------- */
-    const sign = `${razorpay_order_id}|${razorpay_payment_id}`;
-    const expectedSign = crypto
-      .createHmac("sha256", process.env.RAZORPAY_SECRET)
-      .update(sign)
-      .digest("hex");
-
-    if (expectedSign !== razorpay_signature) {
-      return res.status(400).json({ message: "Payment verification failed" });
-    }
-
-    /* ---------- FETCH DOCTOR ---------- */
-    const doctor = await btocDoctor.findById(bookingPayload.doctorId);
-    if (!doctor) {
-      return res.status(404).json({ message: "Doctor not found" });
-    }
-
-    /* ---------- FINAL AMOUNT WITH 18% GST ---------- */
-    const baseAmount =
-      bookingPayload.price ||
-      doctor.consultationOptions?.[0]?.price ||
-      500;
-
-    const finalAmount = baseAmount + baseAmount * 0.18;
-
-    /* ---------- CREATE BOOKING ---------- */
-    const booking = await Booking.create({
-      doctorId: bookingPayload.doctorId,
-      doctorName: doctor.name,
-      employeeId: bookingPayload.employeeId,
-      name: bookingPayload.name,
-      phone: bookingPayload.phone,
-      email: bookingPayload.email || null,
-      date: bookingPayload.date,
-      slot: bookingPayload.slot,
-      mode: bookingPayload.mode,
-
-      // SAVE FINAL PAID AMOUNT
-      amount: finalAmount.toFixed(0),
-
-      duration:
-        bookingPayload.duration ||
-        doctor.consultationOptions?.[0]?.duration ||
-        30,
-
-      payment: {
-        orderId: razorpay_order_id,
-        paymentId: razorpay_payment_id,
-        status: "paid",
-      },
+    /* ---------- PREVENT DUPLICATE BOOKINGS ---------- */
+    let booking = await Booking.findOne({
+      "payment.paymentId": razorpay_payment_id,
     });
 
-    console.log("✅ Booking created:", booking._id);
+    if (!booking) {
+      /* ---------- VERIFY RAZORPAY ---------- */
+      const sign = `${razorpay_order_id}|${razorpay_payment_id}`;
 
-    const [startTime] = booking.slot.split(" - "); 
-    const sessionDateTime = new Date(`${booking.date}T${startTime}:00`);
+      const expectedSign = crypto
+        .createHmac("sha256", process.env.RAZORPAY_SECRET)
+        .update(sign)
+        .digest("hex");
 
-    booking.reminderAt = new Date(sessionDateTime.getTime() - 60 * 60 * 1000);
-   booking.reminderSent = false;
-   await booking.save();
+      if (expectedSign !== razorpay_signature) {
+        return res.status(400).json({ message: "Payment verification failed" });
+      }
 
+      /* ---------- FETCH DOCTOR ---------- */
+      const doctor = await btocDoctor.findById(bookingPayload.doctorId);
 
+      if (!doctor) {
+        return res.status(404).json({ message: "Doctor not found" });
+      }
 
+      /* ---------- AMOUNT ---------- */
+      const baseAmount =
+        bookingPayload.price ||
+        doctor.consultationOptions?.[0]?.price ||
+        500;
 
-    /* ---------- GOOGLE MEET ---------- */
-    try {
-      const meetLink = doctor.meetLink;
-      booking.meetLink = meetLink;
+      const finalAmount = baseAmount + baseAmount * 0.18;
+
+      /* ---------- CREATE BOOKING ---------- */
+      booking = new Booking({
+        doctorId: bookingPayload.doctorId,
+        doctorName: doctor.name,
+        employeeId: bookingPayload.employeeId,
+        name: bookingPayload.name,
+        phone: bookingPayload.phone,
+        email: bookingPayload.email || null,
+        date: bookingPayload.date,
+        slot: bookingPayload.slot,
+        mode: bookingPayload.mode,
+        amount: Number(finalAmount.toFixed(0)),
+        duration:
+          bookingPayload.duration ||
+          doctor.consultationOptions?.[0]?.duration ||
+          30,
+        payment: {
+          orderId: razorpay_order_id,
+          paymentId: razorpay_payment_id,
+          status: "paid",
+        },
+        meetLink: doctor.meetLink,
+        confirmationSent: false,
+        reminderSent: false,
+      });
+
       await booking.save();
-      console.log("✅ Meet link :", meetLink);
-    } catch (meetErr) {
-      console.error("⚠️ Meet generation failed:", meetErr.message);
-    }
 
-    /* ---------- EMAIL DOCTOR ---------- */
-    try {
-      await notifyDoctorByEmail({
+      /* =====================================================
+         ✅ MARK THERAPY REQUEST AS BOOKED (NEW LOGIC)
+      ===================================================== */
+      if (bookingPayload.requestId) {
+        await TherapyRequest.findByIdAndUpdate(
+          bookingPayload.requestId,
+          {
+            bookedTherapist: bookingPayload.doctorId,
+          }
+        );
+      }
+
+      /* ---------- EMAIL DOCTOR ---------- */
+      notifyDoctorByEmail({
         doctor,
         booking,
         employeeName: booking.name,
-      });
-      console.log("✅ Doctor email sent successfully to:", doctor.email);
-    } catch (e) {
-      console.error("⚠️ Doctor email failed:", e);
+      }).catch(() => {});
     }
 
-    /* ---------- SEND WHATSAPP ---------- */
-/* ---------- SEND WHATSAPP ---------- */
-try {
-  const employee = await Employee.findById(booking.employeeId);
-  const toPhone = employee?.phone;
+    /* ---------- 🛡️ CONFIRMATION SAFETY GUARD ---------- */
+    const createdAgoMs = Date.now() - booking.createdAt.getTime();
 
-  if (toPhone) {
-    const wpRes = await sendBookingConfirmation(toPhone, {
-      employeeName: booking.name,
-      doctorName: doctor.name,
-      date: booking.date,
-      time: booking.slot,
-      mode: booking.mode,
-      meetLink: booking.meetLink,
-    });
+    if (createdAgoMs > 2 * 60 * 1000) {
+      console.warn("⚠️ Confirmation blocked (late execution):", booking._id);
+      return res.status(200).json({ success: true, booking });
+    }
 
-// await Booking.updateOne(
-//   { _id: booking._id },
-//   [
-//     {
-//       $set: {
-//         whatsappLogs: {
-//           $cond: {
-//             if: { $isArray: "$whatsappLogs" },
-//             then: "$whatsappLogs",
-//             else: [],
-//           },
-//         },
-//       },
-//     },
-//     {
-//       $set: {
-//         whatsappLogs: {
-//           $concatArrays: [
-//             "$whatsappLogs",
-//             [
-//               {
-//                 to: toPhone,
-//                 type: "confirmation",
-//                 template: "session_details",
-//                 params: [
-//                   booking.name,
-//                   doctor.name,
-//                   booking.date,
-//                   booking.slot,
-//                   booking.meetLink || "Link will be shared shortly",
-//                 ],
-//                 status: wpRes ? "sent" : "failed",
-//                 sentAt: new Date(),
-//               },
-//             ],
-//           ],
-//         },
-//       },
-//     },
-//   ]
-// );
+    /* ---------- ✅ WHATSAPP CONFIRMATION ---------- */
+    if (!booking.confirmationSent) {
+      const employee = await Employee.findById(booking.employeeId);
 
+      const toPhone = String(
+        booking.phone || employee?.phone || ""
+      ).replace(/\D/g, "");
 
-  }
-} catch (wpErr) {
-  console.error("⚠️ WhatsApp failed:", wpErr.message);
-}
+      if (toPhone) {
+        await sendBookingConfirmation(toPhone, {
+          employeeName: booking.name,
+          doctorName: booking.doctorName,
+          date: booking.date,
+          time: booking.slot,
+          meetLink: booking.meetLink,
+          __alreadyConfirmed: booking.confirmationSent === true,
+        });
 
+        booking.confirmationSent = true;
+        await booking.save();
 
-    return res.status(200).json({
-      success: true,
-      booking,
-    });
+        console.log("✅ Confirmation sent for booking:", booking._id);
+      }
+    }
+
+    return res.status(200).json({ success: true, booking });
   } catch (err) {
-    console.error("❌ Verify & book error:", err.message);
+    console.error("Verify & book error:", err);
+
     return res.status(500).json({
       success: false,
       message: "Booking failed after payment",
     });
   }
 });
-
 
 
 /* ------------------------------------------------
@@ -362,6 +476,154 @@ router.post("/create-offer-order", async (req, res) => {
 });
 
 
+// router.post("/verify-offer-and-book", async (req, res) => {
+//   try {
+//     const {
+//       razorpay_order_id,
+//       razorpay_payment_id,
+//       razorpay_signature,
+//       bookingPayload,
+//     } = req.body;
+
+//     if (
+//       !razorpay_order_id ||
+//       !razorpay_payment_id ||
+//       !razorpay_signature ||
+//       !bookingPayload
+//     ) {
+//       return res.status(400).json({ message: "Missing payment data" });
+//     }
+
+//     /* ---------- PREVENT DUPLICATE BOOKINGS ---------- */
+//     const existingBooking = await Booking.findOne({
+//       "payment.paymentId": razorpay_payment_id,
+//     });
+
+//     if (existingBooking) {
+//       return res.status(200).json({
+//         success: true,
+//         booking: existingBooking,
+//       });
+//     }
+
+//     /* ---------- VERIFY RAZORPAY ---------- */
+//     const sign = `${razorpay_order_id}|${razorpay_payment_id}`;
+//     const expectedSign = crypto
+//       .createHmac("sha256", process.env.RAZORPAY_SECRET)
+//       .update(sign)
+//       .digest("hex");
+
+//     if (expectedSign !== razorpay_signature) {
+//       return res.status(400).json({ message: "Payment verification failed" });
+//     }
+
+//     const {
+//       doctorId,
+//       employeeId,
+//       name,
+//       phone,
+//       email,
+//       date,
+//       slot,
+//       mode,
+//     } = bookingPayload;
+
+//     /* ---------- FETCH DOCTOR ---------- */
+//     const doctor = await btocDoctor.findById(doctorId);
+//     if (!doctor) {
+//       return res.status(404).json({ message: "Doctor not found" });
+//     }
+
+//     if (!doctor.isFirstSessionOffer || !doctor.firstSessionPrice) {
+//       return res.status(400).json({ message: "Offer not valid for this doctor" });
+//     }
+
+//     /* ---------- CREATE BOOKING ---------- */
+//     const booking = new Booking({
+//       doctorId,
+//       doctorName: doctor.name,
+//       employeeId,
+//       name,                           // ✅ client name
+//       phone,
+//       email: email || null,
+//       date,
+//       slot,
+//       mode,
+//       amount: doctor.firstSessionPrice,
+//       duration: doctor.consultationOptions?.[0]?.duration || 30,
+//       isOfferBooking: true,
+//       payment: {
+//         orderId: razorpay_order_id,
+//         paymentId: razorpay_payment_id,
+//         status: "paid",
+//       },
+//       meetLink: doctor.meetLink,
+//       confirmationSent: false,
+//       reminderSent: false,
+//     });
+
+// /* ---------- ⏰ REMINDER TIME (IST) ---------- */
+// const [startTime] = booking.slot.split(" - "); // "16:30"
+// const [hours, minutes] = startTime.split(":");
+
+// const sessionDateTime = new Date(
+//   `${booking.date}T${hours}:${minutes}:00+05:30`
+// );
+
+// // 16:30 → 12:14 (4h 16m before)
+// const REMINDER_OFFSET_MS =
+//   (4 * 60 * 60 * 1000) + (16 * 60 * 1000);
+
+// booking.reminderAt = new Date(
+//   sessionDateTime.getTime() - REMINDER_OFFSET_MS
+// );
+
+// await booking.save();
+
+
+//     /* ---------- EMAIL DOCTOR ---------- */
+//     notifyDoctorByEmail({
+//       doctor,
+//       booking,
+//       employeeName: booking.name,   // ✅ correct client name
+//     }).catch(() => {});
+
+//     /* ---------- WHATSAPP CONFIRMATION (PAYMENT ONLY) ---------- */
+//     if (!booking.confirmationSent) {
+//       const toPhone = String(phone).replace(/\D/g, "");
+
+//       if (toPhone) {
+// await sendBookingConfirmation(toPhone, {
+//   employeeName: booking.name,
+//   doctorName: booking.doctorName,
+//   date: booking.date,
+//   time: booking.slot,
+//   meetLink: booking.meetLink,
+//   __alreadyConfirmed: booking.confirmationSent === true,
+// });
+
+
+//         booking.confirmationSent = true;
+//         await booking.save();
+
+//         console.log("✅ Offer booking WhatsApp confirmation sent:", booking._id);
+//       }
+//     }
+
+//     return res.status(200).json({
+//       success: true,
+//       booking,
+//     });
+
+//   } catch (err) {
+//     console.error("Offer booking error:", err);
+//     return res.status(500).json({
+//       success: false,
+//       message: "Offer booking failed",
+//     });
+//   }
+// });
+
 router.post("/verify-offer-and-book", async (req, res) => {
   try {
     const {
@@ -380,8 +642,21 @@ router.post("/verify-offer-and-book", async (req, res) => {
       return res.status(400).json({ message: "Missing payment data" });
     }
 
+    /* ---------- PREVENT DUPLICATE BOOKINGS ---------- */
+    const existingBooking = await Booking.findOne({
+      "payment.paymentId": razorpay_payment_id,
+    });
+
+    if (existingBooking) {
+      return res.status(200).json({
+        success: true,
+        booking: existingBooking,
+      });
+    }
+
     /* ---------- VERIFY RAZORPAY ---------- */
     const sign = `${razorpay_order_id}|${razorpay_payment_id}`;
+
     const expectedSign = crypto
       .createHmac("sha256", process.env.RAZORPAY_SECRET)
       .update(sign)
@@ -391,25 +666,33 @@ router.post("/verify-offer-and-book", async (req, res) => {
       return res.status(400).json({ message: "Payment verification failed" });
     }
 
-    const { doctorId, employeeId, name, phone, email, date, slot, mode } =
-      bookingPayload;
+    const {
+      doctorId,
+      employeeId,
+      name,
+      phone,
+      email,
+      date,
+      slot,
+      mode,
+      requestId, // ✅ IMPORTANT (NEW)
+    } = bookingPayload;
 
     /* ---------- FETCH DOCTOR ---------- */
     const doctor = await btocDoctor.findById(doctorId);
+
     if (!doctor) {
       return res.status(404).json({ message: "Doctor not found" });
     }
 
     if (!doctor.isFirstSessionOffer || !doctor.firstSessionPrice) {
-      return res
-        .status(400)
-        .json({ message: "Offer not valid for this doctor" });
+      return res.status(400).json({ message: "Offer not valid for this doctor" });
     }
 
     /* ---------- CREATE BOOKING ---------- */
-    const booking = await Booking.create({
+    const booking = new Booking({
       doctorId,
-      doctorName: doctor.name, // ✅ save name snapshot
+      doctorName: doctor.name,
       employeeId,
       name,
       phone,
@@ -418,92 +701,68 @@ router.post("/verify-offer-and-book", async (req, res) => {
       slot,
       mode,
       amount: doctor.firstSessionPrice,
-      duration: doctor.charges?.duration || 30,
+      duration: doctor.consultationOptions?.[0]?.duration || 30,
       isOfferBooking: true,
       payment: {
         orderId: razorpay_order_id,
         paymentId: razorpay_payment_id,
         status: "paid",
       },
+      meetLink: doctor.meetLink,
+      confirmationSent: false,
+      reminderSent: false,
     });
 
-    console.log("✅ Offer booking created:", booking._id);
-
-    /* ⏰ REMINDER SETUP (ADD THIS) */
-const [startTime] = booking.slot.split(" - ");
-const sessionDateTime = new Date(`${booking.date}T${startTime}:00`);
-
-booking.reminderAt = new Date(sessionDateTime.getTime() - 60 * 60 * 1000); // 1 hour before
-booking.reminderSent = false;
-
-/* ⏰ END */
-
-    const meetLink = await doctor.meetLink;
-
-    booking.meetLink = meetLink;
     await booking.save();
 
-    console.log("✅ Offer Meet link from doctor db:", meetLink);
+    /* =====================================================
+       ✅ MARK THERAPY REQUEST AS BOOKED (NEW LOGIC)
+    ===================================================== */
+    if (requestId) {
+      await TherapyRequest.findByIdAndUpdate(requestId, {
+        bookedTherapist: doctorId,
+      });
+    }
 
+    /* ---------- EMAIL DOCTOR ---------- */
+    notifyDoctorByEmail({
+      doctor,
+      booking,
+      employeeName: booking.name,
+    }).catch(() => {});
 
-    // ✅ EMAIL DOCTOR (after meet link is saved)
-try {
-  console.log("DOCTOR EMAIL:", doctor.email);
+    /* ---------- WHATSAPP CONFIRMATION ---------- */
+    if (!booking.confirmationSent) {
+      const toPhone = String(phone).replace(/\D/g, "");
 
-  await notifyDoctorByEmail({
-    doctor,
-    booking,
-    employeeName: booking.name,
-  });
+      if (toPhone) {
+        await sendBookingConfirmation(toPhone, {
+          employeeName: booking.name,
+          doctorName: booking.doctorName,
+          date: booking.date,
+          time: booking.slot,
+          meetLink: booking.meetLink,
+          __alreadyConfirmed: booking.confirmationSent === true,
+        });
 
-  console.log("✅ Doctor email sent successfully to:", doctor.email);
-} catch (e) {
-  console.error("⚠️ Doctor email failed:", e);
-}
+        booking.confirmationSent = true;
+        await booking.save();
 
+        console.log("✅ Offer booking WhatsApp confirmation sent:", booking._id);
+      }
+    }
 
-    /* ---------- SEND WHATSAPP (AFTER MEET LINK) ---------- */
-try {
-  const employee = await Employee.findById(employeeId);
-
-  // ✅ Prefer phone from booking payload/booking (most reliable), fallback to DB
-  const toPhone = booking?.phone || phone || employee?.phone;
-
-  console.log("📲 WHATSAPP TO:", toPhone);
-
-if (toPhone) {
-  const wpRes = await sendBookingConfirmation(toPhone, {
-    employeeName: name,
-    doctorName: doctor.name,
-    date,
-    time: slot,
-    mode,
-    meetLink: booking.meetLink,
-  });
-
-
-
-
-
-
-
-} else {
-  console.log("⚠️ WhatsApp not sent: missing recipient phone");
-}} catch (wpErr) {
-  console.error("⚠️ Offer WhatsApp failed:", wpErr.response?.data || wpErr.message);
-}
-
-
-    /* ---------- RETURN AFTER EVERYTHING ---------- */
     return res.status(200).json({
       success: true,
       booking,
     });
+
   } catch (err) {
-    console.error("❌ Offer booking error:", err.message);
+    console.error("Offer booking error:", err);
+
     return res.status(500).json({
       success: false,
-      message: err.message || "Offer booking failed",
+      message: "Offer booking failed",
     });
   }
 });

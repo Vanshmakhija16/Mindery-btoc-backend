@@ -512,4 +512,7 @@ btoDoctorSchema.methods.getUpcomingAvailability45 = function (days = 30) {
   return availability;
 };
 
-export default mongoose.model("BtoDoctor", btoDoctorSchema);
+const BtoDoctor =
+  mongoose.models.BtoDoctor || mongoose.model("BtoDoctor", btoDoctorSchema);
+
+export default BtoDoctor;

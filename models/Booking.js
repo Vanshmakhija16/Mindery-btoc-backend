@@ -61,6 +61,11 @@ email: {
     paymentId: String,
     status: String,
   },
+  confirmationSent: {
+  type: Boolean,
+  default: false,
+},
+
 //   whatsappLogs: [
 //   {
 //     to: String,            // phone number
