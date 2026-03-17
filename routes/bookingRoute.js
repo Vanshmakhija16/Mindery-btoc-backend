@@ -2,6 +2,8 @@ import express from "express";
 import nodemailer from "nodemailer";
 import Booking from "../models/Booking.js";
 import Doctor from "../models/Doctor.js";
+import Company from "../models/Company.js";
+
 import {
   sendBookingConfirmation,
   // sendBookingReminder,
@@ -202,74 +204,98 @@ router.get("/has-any-booking/:employeeId", async (req, res) => {
 });
 
 // CANCEL BOOKING + SEND WHATSAPP NOTIFICATION
+// router.delete("/:bookingId", async (req, res) => {
+//   try {
+//     const { bookingId } = req.params;
+
+//     const booking = await Booking.findById(bookingId).populate("doctorId");
+
+//     if (!booking) {
+//       return res.status(404).json({
+//         success: false,
+//         message: "Booking not found",
+//       });
+//     }
+
+//     const doctor = booking.doctorId;
+//     const refundAmount = booking.amount || 0;
+
+//     // Delete the booking
+//     await Booking.findByIdAndDelete(bookingId);
+
+//     // Restore doctor's available slots
+//     if (doctor && doctor.dateSlots && doctor.dateSlots.has(booking.date)) {
+//       const slots = doctor.dateSlots.get(booking.date) || [];
+//       if (!slots.includes(booking.slot)) {
+//         slots.push(booking.slot);
+//         doctor.dateSlots.set(booking.date, slots);
+//         await doctor.save();
+//       }
+//     }
+
+//     // Send cancellation email to patient
+//     await sendEmail(
+//       booking.email,
+//       "❌ Appointment Cancelled",
+//       `Hello ${booking.name},\n\nYour appointment with Dr. ${doctor?.name} on ${booking.date} at ${booking.slot} has been cancelled.\n\nRefund Amount: ₹${refundAmount}\nRefund will be processed within 3-5 business days.\n\nIf you need to reschedule, please visit our website.\n\n— Mindery Team`
+//     );
+
+//     // Send cancellation WhatsApp to patient
+//     if (booking.phone && doctor) {
+//       const cancelDetails = {
+//         doctorName: doctor.name,
+//         date: booking.date,
+//         bookingId: bookingId.toString().slice(-8),
+//         refundAmount,
+//       };
+//       await sendBookingCancellation(booking.phone, cancelDetails);
+//     }
+
+//     // Notify doctor
+//     if (doctor) {
+//       await sendEmail(
+//         doctor.email,
+//         "❌ Appointment Cancelled",
+//         `Hello Dr. ${doctor.name},\n\nThe appointment scheduled for ${booking.date} at ${booking.slot} with ${booking.name} has been cancelled.\n\n— Mindery Team`
+//       );
+//     }
+
+//     res.status(200).json({
+//       success: true,
+//       message: "Booking cancelled and notifications sent",
+//       data: booking,
+//     });
+//   } catch (error) {
+//     console.error("Error cancelling booking:", error);
+//     res.status(500).json({
+//       success: false,
+//       message: "Error cancelling booking",
+//       error: error.message,
+//     });
+//   }
+// });
+
 router.delete("/:bookingId", async (req, res) => {
   try {
-    const { bookingId } = req.params;
-
-    const booking = await Booking.findById(bookingId).populate("doctorId");
-
+    const booking = await Booking.findById(req.params.bookingId);
     if (!booking) {
-      return res.status(404).json({
-        success: false,
-        message: "Booking not found",
+      return res.status(404).json({ message: "Booking not found." });
+    }
+
+    await Booking.findByIdAndDelete(req.params.bookingId);
+
+    // ── ADDED: Decrement sessionsUsed if this was an org_free booking ─────────
+    if (booking.bookingType === "org_free" && booking.companyId) {
+      await Company.findByIdAndUpdate(booking.companyId, {
+        $inc: { sessionsUsed: -1 },
       });
     }
+    // ─────────────────────────────────────────────────────────────────────────
 
-    const doctor = booking.doctorId;
-    const refundAmount = booking.amount || 0;
-
-    // Delete the booking
-    await Booking.findByIdAndDelete(bookingId);
-
-    // Restore doctor's available slots
-    if (doctor && doctor.dateSlots && doctor.dateSlots.has(booking.date)) {
-      const slots = doctor.dateSlots.get(booking.date) || [];
-      if (!slots.includes(booking.slot)) {
-        slots.push(booking.slot);
-        doctor.dateSlots.set(booking.date, slots);
-        await doctor.save();
-      }
-    }
-
-    // Send cancellation email to patient
-    await sendEmail(
-      booking.email,
-      "❌ Appointment Cancelled",
-      `Hello ${booking.name},\n\nYour appointment with Dr. ${doctor?.name} on ${booking.date} at ${booking.slot} has been cancelled.\n\nRefund Amount: ₹${refundAmount}\nRefund will be processed within 3-5 business days.\n\nIf you need to reschedule, please visit our website.\n\n— Mindery Team`
-    );
-
-    // Send cancellation WhatsApp to patient
-    if (booking.phone && doctor) {
-      const cancelDetails = {
-        doctorName: doctor.name,
-        date: booking.date,
-        bookingId: bookingId.toString().slice(-8),
-        refundAmount,
-      };
-      await sendBookingCancellation(booking.phone, cancelDetails);
-    }
-
-    // Notify doctor
-    if (doctor) {
-      await sendEmail(
-        doctor.email,
-        "❌ Appointment Cancelled",
-        `Hello Dr. ${doctor.name},\n\nThe appointment scheduled for ${booking.date} at ${booking.slot} with ${booking.name} has been cancelled.\n\n— Mindery Team`
-      );
-    }
-
-    res.status(200).json({
-      success: true,
-      message: "Booking cancelled and notifications sent",
-      data: booking,
-    });
-  } catch (error) {
-    console.error("Error cancelling booking:", error);
-    res.status(500).json({
-      success: false,
-      message: "Error cancelling booking",
-      error: error.message,
-    });
+    return res.status(200).json({ message: "Booking cancelled successfully." });
+  } catch (err) {
+    console.error("Cancel booking error:", err);
+    return res.status(500).json({ message: "Failed to cancel booking." });
   }
 });
 

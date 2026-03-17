@@ -34,7 +34,10 @@ import { fileURLToPath } from "url";
 import adminAuthRoutes from "./routes/adminauthRoutes.js";
 import contactRoutes from "./routes/contact.js"
 import therapyRequestRoutes from "./routes/therapyRequestRoutes.js";
-
+import orgMemberRoutes from "./routes/orgMemberRoutes.js";
+import orgAuthRoutes  from "./routes/orgAuthRoutes.js";
+import orgBookingRoute from "./routes/orgBookingRoute.js";
+import orgMemberProfileRoutes from "./routes/orgMemberProfile.routes.js";
 
 
 // ✅ for __dirname in ES modules
@@ -139,8 +142,10 @@ app.use("/api/clinical-reports", clinicalReportRoutes);
 app.use("/api/adminAuth", adminAuthRoutes);
 app.use("/api/contact", contactRoutes);
 app.use("/api/requests", therapyRequestRoutes);
-
-
+app.use("/api/org-member", orgMemberRoutes);
+app.use("/api/org-auth", orgAuthRoutes);
+app.use("/api/org-booking", orgBookingRoute);
+app.use("/api/org-memberprofile", orgMemberProfileRoutes);
 
 app.get("/oauth2callback", async (req, res) => {
   try {
