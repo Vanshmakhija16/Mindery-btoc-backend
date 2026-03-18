@@ -56,30 +56,79 @@ const detectCompany = async (email) => {
 /* ─────────────────────────────────────────────────────
    SEND OTP — unchanged, works for both user types
 ───────────────────────────────────────────────────── */
+// export const sendOtp = async (req, res) => {
+//   try {
+//     const { phone, countryCode } = req.body;
+
+//     if (!phone || !countryCode) {
+//       return res.status(400).json({ message: "Phone number and country code are required" });
+//     }
+
+//     const fullPhone = `${countryCode}${phone}`;
+
+//     // Check both collections
+//     const existsEmployee  = await Employee.findOne({ phone: fullPhone });
+//     const existsOrgMember = await OrgMember.findOne({ phone: fullPhone });
+
+//     if (existsEmployee || existsOrgMember) {
+//       return res.status(400).json({ message: "Phone already registered" });
+//     }
+
+//     const otp = Math.floor(100000 + Math.random() * 900000).toString();
+//     otpStore.set(fullPhone, { otp, expiresAt: Date.now() + 5 * 60 * 1000 });
+
+//     await sendWhatsAppOtp(fullPhone, otp);
+
+//     return res.json({ message: "OTP sent on WhatsApp" });
+//   } catch (err) {
+//     console.error("Send OTP error:", err.message);
+//     return res.status(500).json({ message: "Failed to send OTP" });
+//   }
+// };
+
 export const sendOtp = async (req, res) => {
   try {
-    const { phone, countryCode } = req.body;
+    const {  email, phone, countryCode, } = req.body;
 
-    if (!phone || !countryCode) {
-      return res.status(400).json({ message: "Phone number and country code are required" });
+    console.log("sendOtp body →", req.body); // 👈 debug log
+
+    if (!phone || !countryCode || !email) {
+      return res.status(400).json({
+        message: "Phone number, country code and email are required",
+        received: { phone, countryCode, email }, // 👈 see exactly what's missing
+      });
     }
 
     const fullPhone = `${countryCode}${phone}`;
 
-    // Check both collections
-    const existsEmployee  = await Employee.findOne({ phone: fullPhone });
-    const existsOrgMember = await OrgMember.findOne({ phone: fullPhone });
-
-    if (existsEmployee || existsOrgMember) {
-      return res.status(400).json({ message: "Phone already registered" });
+    // ── Step 1: Block work/org emails immediately ─────────
+    const company = await detectCompany(email);
+    if (company) {
+      return res.status(403).json({
+        message:
+          "You cannot register with a work email. Please use your personal email to sign up here.",
+        isOrgUser: true,
+        companyName: company.name,
+      });
     }
 
+    // ── Step 2: Block if phone already in Employee DB ─────
+    const existsEmployee = await Employee.findOne({ phone: fullPhone });
+    if (existsEmployee) {
+      return res.status(400).json({ message: "This number is already registered. Please login instead." });
+    }
+
+    // ── Step 3: Phone in OrgMember? → Allow OTP ───────────
+    // Same number can exist in OrgMember — still allow with personal email
+
+    // ── Step 4: Send OTP ──────────────────────────────────
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     otpStore.set(fullPhone, { otp, expiresAt: Date.now() + 5 * 60 * 1000 });
 
     await sendWhatsAppOtp(fullPhone, otp);
 
     return res.json({ message: "OTP sent on WhatsApp" });
+
   } catch (err) {
     console.error("Send OTP error:", err.message);
     return res.status(500).json({ message: "Failed to send OTP" });
@@ -87,9 +136,95 @@ export const sendOtp = async (req, res) => {
 };
 
 /* ─────────────────────────────────────────────────────
-   REGISTER — auto-routes to OrgMember or Employee
-   based on email domain
+   REGISTER —  Normal users only
 ───────────────────────────────────────────────────── */
+// export const registerEmployee = async (req, res) => {
+//   try {
+//     console.log("started")
+//     const { name, email, phone, countryCode, password, otp } = req.body;
+
+//     if (!name || !email || !phone || !countryCode || !password || !otp) {
+//       return res.status(400).json({ message: "All fields are required" });
+//     }
+
+//     const fullPhone = `${countryCode}${phone}`;
+
+//     // ── Step 1: Block work/org emails immediately ─────────
+//     // No one can register in normal portal with a work email domain
+//     const company = await detectCompany(email);
+//     console.log(company)
+//     if (company) {
+//       return res.status(403).json({
+//         message:
+//           "You cannot register with a work email. Please use your personal email to sign up here.",
+//         isOrgUser: true,
+//         companyName: company.name,
+//       });
+//     }
+
+//     // ── Step 2: Verify OTP ────────────────────────────────
+//     const record = otpStore.get(fullPhone);
+//     if (!record)                         return res.status(400).json({ message: "OTP expired or not requested" });
+//     if (Date.now() > record.expiresAt) { otpStore.delete(fullPhone); return res.status(400).json({ message: "OTP expired" }); }
+//     if (record.otp !== otp)              return res.status(400).json({ message: "Invalid OTP" });
+//     otpStore.delete(fullPhone);
+
+//     // ── Step 3: Block if already registered in Employee DB ─
+//     // Check email OR phone — either match means duplicate
+//     const existingEmployee = await Employee.findOne({ $or: [{ email }, { phone: fullPhone }] });
+//     if (existingEmployee) {
+//       return res.status(400).json({ message: "Account already exists with this email or phone" });
+//     }
+
+//     // ── Step 4: Phone in OrgMember? → Still allow ─────────
+//     // User may already have a work account with same number
+//     // As long as email is personal (passed Step 1), they can register here too
+//     // No block needed — just proceed
+
+//     // ── Step 5: Create Employee with personal email ───────
+//     const hashedPassword = await bcrypt.hash(password, 10);
+
+//     const employee = await Employee.create({
+//       name,
+//       email,
+//       phone: fullPhone,
+//       password: hashedPassword,
+//     });
+
+//     const token = jwt.sign(
+//       {
+//         id: employee._id,
+//         phone: employee.phone,
+//         role: "employee",
+//         companyId: null,
+//       },
+//       process.env.JWT_SECRET,
+//       { expiresIn: "7d" }
+//     );
+
+//     console.log(`✅ New Employee created: ${email} (individual)`);
+
+//     return res.status(201).json({
+//       message: "Signup successful",
+//       token,
+//       employee: {
+//         id: employee._id,
+//         _id: employee._id,
+//         name: employee.name,
+//         email: employee.email,
+//         phone: employee.phone,
+//         userType: "employee",
+//         companyId: null,
+//         companyName: null,
+//       },
+//     });
+
+//   } catch (err) {
+//     console.error("Register error:", err);
+//     return res.status(500).json({ message: "Signup failed" });
+//   }
+// };
+
 export const registerEmployee = async (req, res) => {
   try {
     const { name, email, phone, countryCode, password, otp } = req.body;
@@ -100,100 +235,63 @@ export const registerEmployee = async (req, res) => {
 
     const fullPhone = `${countryCode}${phone}`;
 
-    // Verify OTP
+    // ── Step 1: Block work/org emails ─────────────────────
+    // By this point phone is already validated in sendOtp
+    // Only check email domain here
+    const company = await detectCompany(email);
+    if (company) {
+      return res.status(403).json({
+        message:
+          "You cannot register with a work email. Please use your personal email to sign up here.",
+        isOrgUser: true,
+        companyName: company.name,
+      });
+    }
+
+    // ── Step 2: Verify OTP ────────────────────────────────
     const record = otpStore.get(fullPhone);
-    if (!record)                       return res.status(400).json({ message: "OTP expired or not requested" });
+    if (!record)                         return res.status(400).json({ message: "OTP expired or not requested" });
     if (Date.now() > record.expiresAt) { otpStore.delete(fullPhone); return res.status(400).json({ message: "OTP expired" }); }
-    if (record.otp !== otp)            return res.status(400).json({ message: "Invalid OTP" });
+    if (record.otp !== otp)              return res.status(400).json({ message: "Invalid OTP" });
     otpStore.delete(fullPhone);
 
-    // Check duplicates across both collections
-    const existingEmployee  = await Employee.findOne({ $or: [{ email }, { phone: fullPhone }] });
-    const existingOrgMember = await OrgMember.findOne({ $or: [{ email }, { phone: fullPhone }] });
-    if (existingEmployee || existingOrgMember) {
-      return res.status(400).json({ message: "Account already exists" });
-    }
-
+    // ── Step 3: Create Employee ───────────────────────────
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // ── KEY DECISION: check email domain ──────────────────
-    const company = await detectCompany(email);
+    const employee = await Employee.create({
+      name,
+      email,
+      phone: fullPhone,
+      password: hashedPassword,
+    });
 
-    if (company) {
-      // ✅ ORG MEMBER — create in OrgMember collection
-      const member = await OrgMember.create({
-        name,
-        email: email.toLowerCase(),
-        phone: fullPhone,
-        password: hashedPassword,
-        companyId: company._id,
-      });
+    const token = jwt.sign(
+      {
+        id: employee._id,
+        phone: employee.phone,
+        role: "employee",
+        companyId: null,
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: "7d" }
+    );
 
-      const token = jwt.sign(
-        {
-          id: member._id,
-          phone: member.phone,
-          role: "org_member",
-          companyId: company._id.toString(),
-        },
-        process.env.JWT_SECRET,
-        { expiresIn: "7d" }
-      );
+    console.log(`✅ New Employee created: ${email} (individual)`);
 
-      console.log(`✅ New OrgMember created: ${email} → ${company.name}`);
-
-      return res.status(201).json({
-        message: "Signup successful",
-        token,
-        employee: {
-          id: member._id,
-          _id: member._id,
-          name: member.name,
-          email: member.email,
-          phone: member.phone,
-          userType: "org_member",
-          companyId: company._id,
-          companyName: company.name,
-        },
-      });
-
-    } else {
-      // ✅ INDIVIDUAL — create in Employee collection (existing flow)
-      const employee = await Employee.create({
-        name,
-        email,
-        phone: fullPhone,
-        password: hashedPassword,
-      });
-
-      const token = jwt.sign(
-        {
-          id: employee._id,
-          phone: employee.phone,
-          role: "employee",
-          companyId: null,
-        },
-        process.env.JWT_SECRET,
-        { expiresIn: "7d" }
-      );
-
-      console.log(`✅ New Employee created: ${email} (individual)`);
-
-      return res.status(201).json({
-        message: "Signup successful",
-        token,
-        employee: {
-          id: employee._id,
-          _id: employee._id,
-          name: employee.name,
-          email: employee.email,
-          phone: employee.phone,
-          userType: "employee",
-          companyId: null,
-          companyName: null,
-        },
-      });
-    }
+    return res.status(201).json({
+      message: "Signup successful",
+      token,
+      employee: {
+        id: employee._id,
+        _id: employee._id,
+        name: employee.name,
+        email: employee.email,
+        phone: employee.phone,
+        userType: "employee",
+        companyId: null,
+        companyName: null,
+      },
+    });
 
   } catch (err) {
     console.error("Register error:", err);
@@ -207,6 +305,7 @@ export const registerEmployee = async (req, res) => {
 ───────────────────────────────────────────────────── */
 export const loginEmployee = async (req, res) => {
   try {
+    console.log("login function starts");
     const { phone, countryCode, password } = req.body;
 
     if (!phone || !countryCode || !password) {
@@ -215,67 +314,30 @@ export const loginEmployee = async (req, res) => {
 
     const fullPhone = `${countryCode}${phone}`;
 
-    // ── Try OrgMember first ───────────────────────────────
+    // ── Step 1: Check if number belongs to OrgMember ──────
     const member = await OrgMember.findOne({ phone: fullPhone });
+    console.log(member, "member");
 
     if (member) {
-      const valid = await bcrypt.compare(password, member.password);
-      if (!valid) return res.status(401).json({ message: "Invalid password" });
-
-      // Re-detect company on every login (handles renewals / expiry)
-      const company = await detectCompany(member.email);
-      const companyId = company ? company._id : null;
-
-      // Silently update if company status changed
-      if (String(member.companyId) !== String(companyId)) {
-        member.companyId = companyId;
-        await member.save();
-      }
-
-      const token = jwt.sign(
-        {
-          id: member._id,
-          phone: member.phone,
-          role: "org_member",
-          companyId: companyId ? companyId.toString() : null,
-        },
-        process.env.JWT_SECRET,
-        { expiresIn: "7d" }
-      );
-
-      return res.json({
-        token,
-        employee: {
-          _id: member._id,
-          name: member.name,
-          email: member.email,
-          phone: member.phone,
-          userType: "org_member",
-          companyId: companyId || null,
-          companyName: company ? company.name : null,
-        },
+      return res.status(403).json({
+        message:
+          "This number is registered with an organization account. Please login via the Organization Portal or sign up again with your personal email.",
+        isOrgUser: true,
       });
     }
 
-    // ── Try Employee (individual) ─────────────────────────
+    // ── Step 2: Check if number exists in Employee DB ─────
     const employee = await Employee.findOne({ phone: fullPhone });
 
     if (!employee) {
       return res.status(404).json({ message: "Account not found" });
     }
-    // 🚨 CHECK IF THIS EMPLOYEE BELONGS TO A COMPANY
-const company = await detectCompany(employee.email);
 
-if (company) {
-  return res.status(403).json({
-    message: "You are registered via your organization. Please login using Organization Login.",
-    isOrgUser: true,
-  });
-}
-
+    // ── Step 3: Validate password ─────────────────────────
     const valid = await bcrypt.compare(password, employee.password);
     if (!valid) return res.status(401).json({ message: "Invalid password" });
 
+    // ── Step 4: Generate token & return response ──────────
     const token = jwt.sign(
       {
         id: employee._id,
@@ -305,7 +367,6 @@ if (company) {
     return res.status(500).json({ message: "Login failed" });
   }
 };
-
 /* ─────────────────────────────────────────────────────
    FORGOT PASSWORD — tries both collections
 ───────────────────────────────────────────────────── */
