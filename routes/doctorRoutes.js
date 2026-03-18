@@ -2005,7 +2005,116 @@ router.get("/doctors/:id", async (req, res) => {
 });
 
 
+// Returns just the next available slot for a doctor
+router.get("/:id/nextSlot", async (req, res) => {
+  try {
+    const doctor = await btocDoctor.findById(req.params.id);
+    if (!doctor) return res.status(404).json({ message: "Doctor not found" });
 
+    // Reuse your existing availability logic (with bookings excluded)
+    const bookings = await Booking.find({
+      doctorId: doctor._id,
+      status: { $ne: "cancelled" }
+    });
+
+    const normalizeSlot = (s) => s.replace(/\s+/g, " ").trim();
+    const normalizeDate = (d) => dayjs(d).tz(IST).format("YYYY-MM-DD");
+    const nowPlusBuffer = dayjs().tz(IST).add(4, "hour");
+
+    // Get availability using nonOffer method (45 min slots)
+    let availability = {};
+    if (typeof doctor.getUpcomingAvailability45 === "function") {
+      availability = doctor.getUpcomingAvailability45(30);
+    }
+
+    for (const [date, slots] of Object.entries(availability)) {
+      const bookedSlots = bookings
+        .filter((b) => normalizeDate(b.date) === date)
+        .map((b) => normalizeSlot(b.slot));
+
+      for (const s of slots || []) {
+        const slotStr = typeof s === "string"
+          ? normalizeSlot(s)
+          : normalizeSlot(`${s.startTime} - ${s.endTime}`);
+
+        if (bookedSlots.includes(slotStr)) continue;
+
+        const [startTime] = slotStr.split("-").map(t => t.trim());
+        const slotDateTime = dayjs.tz(
+          `${date} ${startTime}`,
+          "YYYY-MM-DD HH:mm",
+          IST
+        );
+
+        if (!slotDateTime.isValid()) continue;
+        if (slotDateTime.isBefore(nowPlusBuffer)) continue;
+
+        // ✅ First valid unboooked slot found
+        return res.json({ date, startTime, slotStr });
+      }
+    }
+
+    return res.json(null); // No available slot
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Next slot for OFFER page (30 min, uses firstSessionPrice)
+router.get("/:id/nextSlotOffer", async (req, res) => {
+  try {
+    const doctor = await btocDoctor.findById(req.params.id);
+    if (!doctor) return res.status(404).json({ message: "Doctor not found" });
+
+    const bookings = await Booking.find({
+      doctorId: doctor._id,
+      status: { $ne: "cancelled" }
+    });
+
+    const normalizeSlot = (s) => s.replace(/\s+/g, " ").trim();
+    const normalizeDate = (d) => dayjs(d).tz(IST).format("YYYY-MM-DD");
+    const nowPlusBuffer = dayjs().tz(IST).add(4, "hour");
+
+    // ✅ Uses getUpcomingAvailability (30 min slots — offer route)
+    let availability = {};
+    if (typeof doctor.getUpcomingAvailability === "function") {
+      availability = doctor.getUpcomingAvailability(30);
+    }
+
+    for (const [date, slots] of Object.entries(availability)) {
+      const bookedSlots = bookings
+        .filter((b) => normalizeDate(b.date) === date)
+        .map((b) => normalizeSlot(b.slot));
+
+      for (const s of slots || []) {
+        const slotStr = typeof s === "string"
+          ? normalizeSlot(s)
+          : normalizeSlot(`${s.startTime} - ${s.endTime}`);
+
+        if (bookedSlots.includes(slotStr)) continue;
+
+        const [startTime] = slotStr.split("-").map(t => t.trim());
+        const slotDateTime = dayjs.tz(
+          `${date} ${startTime}`,
+          "YYYY-MM-DD HH:mm",
+          IST
+        );
+
+        if (!slotDateTime.isValid()) continue;
+        if (slotDateTime.isBefore(nowPlusBuffer)) continue;
+
+        // ✅ First valid unbooked 30-min slot
+        return res.json({ date, startTime, slotStr });
+      }
+    }
+
+    return res.json(null);
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 export default router;
 

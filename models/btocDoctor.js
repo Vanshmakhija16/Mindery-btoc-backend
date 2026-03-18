@@ -299,6 +299,67 @@ btoDoctorSchema.methods.getSlotsForDate = function (
 
 // ✅ Get availability for a specific date
 
+// btoDoctorSchema.methods.getUpcomingAvailability = function (days = 30) {
+//   const availability = {};
+//   const today = new Date();
+
+//   const toMinutes = (t) => {
+//     const [h, m] = String(t).split(":").map(Number);
+//     return h * 60 + m;
+//   };
+
+//   const toTime = (m) =>
+//     `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+
+//   for (let i = 0; i < days; i++) {
+//     const date = new Date(today);
+//     date.setDate(today.getDate() + i);
+//     const dateStr = date.toISOString().slice(0, 10);
+
+//     const weekday = date.toLocaleDateString("en-US", { weekday: "long" });
+
+//     // ✅ Prefer dateAvailability; fallback weeklyAvailability (only active rules)
+//     const dateRule = this.dateAvailability.find(
+//       (d) => d.date === dateStr && d.isActive
+//     );
+//     const weeklyRule = this.weeklyAvailability.find(
+//       (w) => w.day === weekday && w.isActive
+//     );
+
+//     const rule = dateRule || weeklyRule;
+//     if (!rule) continue;
+
+//     const duration = Number(rule.slotDuration || 30);
+//     const start = toMinutes(rule.startTime);
+//     const end = toMinutes(rule.endTime);
+
+//     // ✅ IMPORTANT: if dateRule exists but has no breaks, fallback to weekly breaks
+//     const effectiveBreaks =
+//       dateRule?.breaks?.length ? dateRule.breaks : weeklyRule?.breaks || [];
+
+//     const breaks = (effectiveBreaks || [])
+//       .filter((b) => b?.startTime && b?.endTime && b.startTime < b.endTime)
+//       .map((b) => ({
+//         start: toMinutes(b.startTime),
+//         end: toMinutes(b.endTime),
+//       }));
+
+//     const slots = [];
+//     for (let t = start; t + duration <= end; t += duration) {
+//       const overlapsBreak = breaks.some(
+//         (b) => t < b.end && t + duration > b.start
+//       );
+//       if (overlapsBreak) continue;
+
+//       slots.push(`${toTime(t)} - ${toTime(t + duration)}`);
+//     }
+
+//     if (slots.length > 0) availability[dateStr] = slots;
+//   }
+
+//   return availability;
+// };
+
 btoDoctorSchema.methods.getUpcomingAvailability = function (days = 30) {
   const availability = {};
   const today = new Date();
@@ -311,14 +372,15 @@ btoDoctorSchema.methods.getUpcomingAvailability = function (days = 30) {
   const toTime = (m) =>
     `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
 
+  // ✅ Use the active consultation duration, fallback to 30
+  const activeDuration = this.consultationOptions?.find(opt => opt.isActive)?.duration || 30;
+
   for (let i = 0; i < days; i++) {
     const date = new Date(today);
     date.setDate(today.getDate() + i);
     const dateStr = date.toISOString().slice(0, 10);
-
     const weekday = date.toLocaleDateString("en-US", { weekday: "long" });
 
-    // ✅ Prefer dateAvailability; fallback weeklyAvailability (only active rules)
     const dateRule = this.dateAvailability.find(
       (d) => d.date === dateStr && d.isActive
     );
@@ -329,15 +391,13 @@ btoDoctorSchema.methods.getUpcomingAvailability = function (days = 30) {
     const rule = dateRule || weeklyRule;
     if (!rule) continue;
 
-    const duration = Number(rule.slotDuration || 30);
+    const duration = activeDuration; // ✅ Use consultation duration, not stored slotDuration
+
     const start = toMinutes(rule.startTime);
     const end = toMinutes(rule.endTime);
 
-    // ✅ IMPORTANT: if dateRule exists but has no breaks, fallback to weekly breaks
-    const effectiveBreaks =
-      dateRule?.breaks?.length ? dateRule.breaks : weeklyRule?.breaks || [];
-
-    const breaks = (effectiveBreaks || [])
+    // ✅ Use rule's own breaks only
+    const breaks = (rule.breaks || [])
       .filter((b) => b?.startTime && b?.endTime && b.startTime < b.endTime)
       .map((b) => ({
         start: toMinutes(b.startTime),
@@ -350,7 +410,6 @@ btoDoctorSchema.methods.getUpcomingAvailability = function (days = 30) {
         (b) => t < b.end && t + duration > b.start
       );
       if (overlapsBreak) continue;
-
       slots.push(`${toTime(t)} - ${toTime(t + duration)}`);
     }
 
@@ -359,7 +418,6 @@ btoDoctorSchema.methods.getUpcomingAvailability = function (days = 30) {
 
   return availability;
 };
-
 
 
 btoDoctorSchema.methods.getAvailabilityForDate = function (dateStr) {
