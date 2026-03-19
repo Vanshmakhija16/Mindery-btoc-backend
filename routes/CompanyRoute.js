@@ -371,16 +371,20 @@ router.get("/:id", async (req, res) => {
 router.get("/:companyId/doctors", async (req, res) => {
   try {
     const company = await Company.findById(req.params.companyId)
-      .populate("doctors", "name specialization profilePhoto experience expertise languages charges consultationOptions availabilityType");
+      .populate(
+        "doctors",
+        "name specialization profession profilePhoto experience expertise languages charges consultationOptions availabilityType dateAvailability isAvailable displayOrder"
+        // ✅ Added: profession, displayOrder
+      );
+
     if (!company) return res.status(404).json({ message: "Company not found." });
-    console.log(company.doctors)
+
     return res.status(200).json({ doctors: company.doctors });
   } catch (err) {
     console.error("Get company doctors error:", err);
     return res.status(500).json({ message: "Failed to fetch doctors." });
   }
 });
-
 // ✅ Assign a doctor to a company
 router.post("/:companyId/doctors", authMiddleware, requireRole("admin"), async (req, res) => {
   try {

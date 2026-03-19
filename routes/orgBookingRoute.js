@@ -114,7 +114,7 @@ router.post("/", authMiddleware, async (req, res) => {
                 <tr><td style="padding:8px;color:#6b7280">Amount</td><td style="padding:8px;font-weight:600;color:#059669">Covered by your organization</td></tr>
               </table>
               <p style="color:#6b7280;font-size:13px">If you have any questions, please contact your HR or reply to this email.</p>
-              <p>— Mindery Team</p>
+              <p>- Mindery Team</p>
             </div>
           `,
         });
@@ -137,13 +137,12 @@ router.post("/", authMiddleware, async (req, res) => {
               <p>New booking from <strong>${company.name}</strong>.</p>
               <table style="width:100%;border-collapse:collapse;margin:16px 0">
                 <tr><td style="padding:8px;color:#6b7280">Patient</td><td style="padding:8px;font-weight:600">${memberName}</td></tr>
-                <tr><td style="padding:8px;color:#6b7280">Email</td><td style="padding:8px;font-weight:600">${memberEmail}</td></tr>
-                <tr><td style="padding:8px;color:#6b7280">Phone</td><td style="padding:8px;font-weight:600">${memberPhone}</td></tr>
                 <tr><td style="padding:8px;color:#6b7280">Date</td><td style="padding:8px;font-weight:600">${date}</td></tr>
                 <tr><td style="padding:8px;color:#6b7280">Time</td><td style="padding:8px;font-weight:600">${slot}</td></tr>
+                <tr><td style="padding:8px;color:#6b7280">Meet Link</td><td style="padding:8px;font-weight:600"><a href="${meetLink || '#'}" style="color:#DE6875">${meetLink || "Will be shared before your session"}</a></td></tr>
                 <tr><td style="padding:8px;color:#6b7280">Mode</td><td style="padding:8px;font-weight:600">${mode || "Online"}</td></tr>
               </table>
-              <p>— Mindery Team</p>
+              <p>- Mindery Team</p>
             </div>
           `,
         });
