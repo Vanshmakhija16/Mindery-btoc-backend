@@ -1203,6 +1203,49 @@ router.get("/getall", async (req, res) => {
   }
 });
 
+// ✅ POST /api/assessments/create — Admin creates a new assessment
+router.post("/create", async (req, res) => {
+  try {
+    const { title, slug, description, category, questions, maxScore, isPaid } = req.body;
+    if (!title || !slug) return res.status(400).json({ error: "Title and slug are required" });
+
+    const existing = await Assessment.findOne({ slug });
+    if (existing) return res.status(400).json({ error: "An assessment with this slug already exists" });
+
+    const lastAssessment = await Assessment.findOne().sort({ id: -1 }).lean();
+    const nextId = lastAssessment ? (lastAssessment.id || 0) + 1 : 1;
+
+    const assessment = new Assessment({
+      id: nextId,
+      title,
+      slug,
+      description: description || "",
+      category: category || "mental",
+      questions: questions || [],
+      maxScore: maxScore || 0,
+      isPaid: isPaid || false,
+      isActive: true,
+      createdBy: "admin",
+    });
+
+    await assessment.save();
+    res.status(201).json({ success: true, assessment });
+  } catch (err) {
+    console.error("Create assessment error:", err);
+    res.status(500).json({ error: "Server error", details: err.message });
+  }
+});
+
+// ✅ DELETE /api/assessments/delete/:id — Admin deletes an assessment
+router.delete("/delete/:id", async (req, res) => {
+  try {
+    await Assessment.findByIdAndDelete(req.params.id);
+    res.json({ success: true, message: "Assessment deleted" });
+  } catch (err) {
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
 
 
 

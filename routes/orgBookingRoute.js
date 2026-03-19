@@ -61,6 +61,18 @@ router.post("/", authMiddleware, async (req, res) => {
       });
     }
 
+        // ── Check if employee already used their free session ──────────────
+    const existingBooking = await Booking.findOne({
+      employeeId: memberId,
+      bookingType: "org_free",
+    });
+
+    if (existingBooking) {
+      return res.status(403).json({
+        message: "You have already used your free session. Only one session is allowed per employee.",
+      });
+    }
+
     // ── Fetch doctor (meetLink lives here) ──────────────────────────
     const doctor = await Doctor.findById(doctorId);
     if (!doctor) {

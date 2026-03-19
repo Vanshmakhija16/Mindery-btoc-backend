@@ -38,7 +38,7 @@ import orgMemberRoutes from "./routes/orgMemberRoutes.js";
 import orgAuthRoutes  from "./routes/orgAuthRoutes.js";
 import orgBookingRoute from "./routes/orgBookingRoute.js";
 import orgMemberProfileRoutes from "./routes/orgMemberProfile.routes.js";
-
+import orgAssessmentRoutes from "./routes/orgAssessmentRoutes.js";
 
 // ✅ for __dirname in ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -146,6 +146,7 @@ app.use("/api/org-member", orgMemberRoutes);
 app.use("/api/org-auth", orgAuthRoutes);
 app.use("/api/org-booking", orgBookingRoute);
 app.use("/api/org-memberprofile", orgMemberProfileRoutes);
+app.use("/api/org-assessments", orgAssessmentRoutes);
 
 app.get("/oauth2callback", async (req, res) => {
   try {
@@ -229,7 +230,56 @@ app.get("/api/check",async(req,res)=> {
 const PORT = process.env.PORT || 5000;
 mongoose
   .connect(process.env.MONGO_URI, { serverSelectionTimeoutMS: 10000 })
-  .then(() => console.log("MongoDB connected"))
+  .then(async () => {
+    console.log("MongoDB connected");
+    // ✅ One-time migration: patch old assessments that have no isActive/isPaid fields
+    try {
+      const Assessment = (await import("./models/Assessment.js")).default;
+      const result = await Assessment.updateMany(
+        { isActive: { $exists: false } },
+        { $set: { isActive: true, isPaid: false } }
+      );
+      if (result.modifiedCount > 0) {
+        console.log(`✅ Migrated ${result.modifiedCount} assessments: set isActive=true, isPaid=false`);
+      }
+
+      // ✅ Auto-seed WBS if it doesn't exist
+      const wbsExists = await Assessment.findOne({ slug: "wbs" });
+      if (!wbsExists) {
+        await Assessment.create({
+          id: 6,
+          title: "Workplace Burnout Scale (WBS)",
+          slug: "wbs",
+          category: "stress",
+          description: "A clinically validated 15-item scale measuring the three core dimensions of workplace burnout — emotional exhaustion, depersonalisation, and reduced personal accomplishment. Designed specifically for working professionals.",
+          maxScore: 60,
+          isPaid: true,
+          isActive: true,
+          createdBy: "admin",
+          questions: [
+            { id: "q1", text: "I feel emotionally drained by my work.", options: ["Never","Rarely","Sometimes","Often","Always"], optionsWithWeights: { Never:0,Rarely:1,Sometimes:2,Often:3,Always:4 } },
+            { id: "q2", text: "I feel used up at the end of the workday.", options: ["Never","Rarely","Sometimes","Often","Always"], optionsWithWeights: { Never:0,Rarely:1,Sometimes:2,Often:3,Always:4 } },
+            { id: "q3", text: "I feel fatigued when I get up in the morning and have to face another day on the job.", options: ["Never","Rarely","Sometimes","Often","Always"], optionsWithWeights: { Never:0,Rarely:1,Sometimes:2,Often:3,Always:4 } },
+            { id: "q4", text: "Working with people all day is really a strain for me.", options: ["Never","Rarely","Sometimes","Often","Always"], optionsWithWeights: { Never:0,Rarely:1,Sometimes:2,Often:3,Always:4 } },
+            { id: "q5", text: "I feel burned out from my work.", options: ["Never","Rarely","Sometimes","Often","Always"], optionsWithWeights: { Never:0,Rarely:1,Sometimes:2,Often:3,Always:4 } },
+            { id: "q6", text: "I feel frustrated by my job.", options: ["Never","Rarely","Sometimes","Often","Always"], optionsWithWeights: { Never:0,Rarely:1,Sometimes:2,Often:3,Always:4 } },
+            { id: "q7", text: "I feel I am working too hard on my job.", options: ["Never","Rarely","Sometimes","Often","Always"], optionsWithWeights: { Never:0,Rarely:1,Sometimes:2,Often:3,Always:4 } },
+            { id: "q8", text: "I have become less interested in my work since I started this job.", options: ["Never","Rarely","Sometimes","Often","Always"], optionsWithWeights: { Never:0,Rarely:1,Sometimes:2,Often:3,Always:4 } },
+            { id: "q9", text: "I have become more callous toward people since I started this job.", options: ["Never","Rarely","Sometimes","Often","Always"], optionsWithWeights: { Never:0,Rarely:1,Sometimes:2,Often:3,Always:4 } },
+            { id: "q10", text: "I worry that this job is hardening me emotionally.", options: ["Never","Rarely","Sometimes","Often","Always"], optionsWithWeights: { Never:0,Rarely:1,Sometimes:2,Often:3,Always:4 } },
+            { id: "q11", text: "I feel I have accomplished many worthwhile things in my work.", options: ["Always","Often","Sometimes","Rarely","Never"], optionsWithWeights: { Always:0,Often:1,Sometimes:2,Rarely:3,Never:4 } },
+            { id: "q12", text: "I feel confident that I am effective at getting things done.", options: ["Always","Often","Sometimes","Rarely","Never"], optionsWithWeights: { Always:0,Often:1,Sometimes:2,Rarely:3,Never:4 } },
+            { id: "q13", text: "In my work, I deal with emotional problems calmly.", options: ["Always","Often","Sometimes","Rarely","Never"], optionsWithWeights: { Always:0,Often:1,Sometimes:2,Rarely:3,Never:4 } },
+            { id: "q14", text: "I can easily create a relaxed atmosphere with people I work with.", options: ["Always","Often","Sometimes","Rarely","Never"], optionsWithWeights: { Always:0,Often:1,Sometimes:2,Rarely:3,Never:4 } },
+            { id: "q15", text: "I feel I make a positive difference through my work.", options: ["Always","Often","Sometimes","Rarely","Never"], optionsWithWeights: { Always:0,Often:1,Sometimes:2,Rarely:3,Never:4 } },
+          ],
+        });
+        console.log("✅ Workplace Burnout Scale (WBS) seeded — isPaid: true (locked by default)");
+      }
+    } catch (err) {
+      console.error("Assessment migration error:", err.message);
+    }
+  })
   .catch((err) => console.error("MongoDB connection error:", err));
 
 

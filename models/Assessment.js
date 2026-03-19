@@ -14,7 +14,10 @@ const assessmentSchema = new mongoose.Schema({
       optionsWithWeights: Object
     }
   ],
-  maxScore: Number
+  maxScore: Number,
+  isPaid:    { type: Boolean, default: false },
+  isActive:  { type: Boolean, default: true },
+  createdBy: { type: String,  default: "admin" }
 });
 
 export default mongoose.model("Assessment", assessmentSchema);

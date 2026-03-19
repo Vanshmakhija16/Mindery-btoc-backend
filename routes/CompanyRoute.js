@@ -7,6 +7,7 @@ import Doctor from "../models/Doctor.js";
 import EmployeeAppointment from "../models/EmployeeAppointment.js";
 import Employee from "../models/Employee.js";
 import nodemailer from "nodemailer";
+import Assessment from "../models/Assessment.js";
 
 const router = express.Router();
 
@@ -229,6 +230,20 @@ router.post("/org-booking", async (req, res) => {
     }
     if (company.sessionsUsed >= company.sessionQuota) {
       return res.status(400).json({ success: false, message: "Quota exhausted" });
+    }
+
+    // ✅ Check if this member already used their 1 free session
+    const existingBooking = await Booking.findOne({
+      email: email || null,
+      bookingType: "org_free",
+      companyId,
+    });
+    if (existingBooking) {
+      return res.status(400).json({
+        success: false,
+        message: "You have already used your 1 free company session.",
+        alreadyBooked: true,
+      });
     }
 
     // Create booking with bookingType org_free
@@ -471,5 +486,75 @@ router.post("/", async (req, res) => {
 });
 
 
+
+// ✅ GET assessments for a company (global free + company unlocked paid)
+router.get("/:companyId/assessments", async (req, res) => {
+  try {
+    const company = await Company.findById(req.params.companyId).lean();
+    if (!company) return res.status(404).json({ error: "Company not found" });
+
+    const unlockedIds = (company.assignedAssessments || [])
+      .filter((a) => a.isUnlocked)
+      .map((a) => a.assessmentId.toString());
+
+    const all = await Assessment.find({ isActive: { $ne: false } }).lean();
+
+    const result = all.map((a) => ({
+      ...a,
+      isLocked: a.isPaid === true && !unlockedIds.includes(a._id.toString()),
+    }));
+
+    res.json({ assessments: result });
+  } catch (err) {
+    console.error("Get company assessments error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// ✅ PATCH assign assessments to company (admin)
+router.patch("/:companyId/assign-assessments", async (req, res) => {
+  try {
+    const { assessmentIds } = req.body;
+    if (!Array.isArray(assessmentIds))
+      return res.status(400).json({ message: "assessmentIds must be an array" });
+
+    const company = await Company.findById(req.params.companyId);
+    if (!company) return res.status(404).json({ message: "Company not found" });
+
+    company.assignedAssessments = assessmentIds.map((id) => ({
+      assessmentId: id,
+      isUnlocked: true,
+      assignedAt: new Date(),
+    }));
+
+    await company.save();
+    res.json({ success: true, message: "Assessments assigned", company });
+  } catch (err) {
+    console.error("Assign assessments error:", err);
+    res.status(500).json({ message: "Failed to assign assessments" });
+  }
+});
+
+// ✅ GET all assessments with lock status for a company (used by admin)
+router.get("/:companyId/assessments-admin", async (req, res) => {
+  try {
+    const company = await Company.findById(req.params.companyId).lean();
+    if (!company) return res.status(404).json({ error: "Company not found" });
+
+    const unlockedIds = (company.assignedAssessments || [])
+      .filter((a) => a.isUnlocked)
+      .map((a) => a.assessmentId.toString());
+
+    const all = await Assessment.find({ isActive: { $ne: false } }).lean();
+    const result = all.map((a) => ({
+      ...a,
+      isAssigned: unlockedIds.includes(a._id.toString()),
+    }));
+
+    res.json({ assessments: result });
+  } catch (err) {
+    res.status(500).json({ error: "Server error" });
+  }
+});
 
 export default router;

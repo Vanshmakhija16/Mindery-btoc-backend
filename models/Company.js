@@ -39,6 +39,14 @@ const companySchema = new mongoose.Schema(
     uppercase: true,
     trim: true,
   },
+
+    assignedAssessments: [
+      {
+        assessmentId: { type: mongoose.Schema.Types.ObjectId, ref: "Assessment" },
+        isUnlocked:   { type: Boolean, default: true },
+        assignedAt:   { type: Date,    default: Date.now },
+      }
+    ],
     // ──────────────────────────────────────────────────────────
   },
   { timestamps: true }
