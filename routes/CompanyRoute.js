@@ -89,7 +89,7 @@ const requireRole = (role) => (req, res, next) => {
 // ✅ Add a new company (UPDATED — now accepts sessionQuota, contractExpiry, hrContactEmail)
 router.post("/add", async (req, res) => {
   try {
-const { name, domainPatterns, sessionQuota, contractExpiry, hrContactEmail, accessCode } = req.body;
+const { name, logo, domainPatterns, sessionQuota, contractExpiry, hrContactEmail, accessCode } = req.body;
     if (!name || !domainPatterns || !Array.isArray(domainPatterns) || domainPatterns.length === 0) {
       return res.status(400).json({ error: "Please provide company name and at least one domain pattern" });
     }
@@ -101,11 +101,12 @@ const { name, domainPatterns, sessionQuota, contractExpiry, hrContactEmail, acce
 
     const company = new Company({
       name,
+      logo: logo || "",
       domainPatterns,
       sessionQuota: sessionQuota || 50,
       contractExpiry: contractExpiry || null,
       hrContactEmail: hrContactEmail || "",
-     accessCode: accessCode?.toUpperCase() || "",  // add this line
+      accessCode: accessCode?.toUpperCase() || "",
 
     });
 
@@ -278,16 +279,18 @@ router.post("/org-booking", async (req, res) => {
 // ✅ Update company details (name, quota, expiry, hrEmail)
 router.put("/:id", async (req, res) => {
   try {
-    const { name, domainPatterns, sessionQuota, contractExpiry, hrContactEmail } = req.body;
+    const { name, logo, domainPatterns, sessionQuota, contractExpiry, hrContactEmail, accessCode } = req.body;
 
     const company = await Company.findById(req.params.id);
     if (!company) return res.status(404).json({ error: "Company not found" });
 
     if (name) company.name = name;
+    if (logo !== undefined) company.logo = logo;
     if (domainPatterns) company.domainPatterns = domainPatterns;
     if (sessionQuota !== undefined) company.sessionQuota = sessionQuota;
     if (contractExpiry !== undefined) company.contractExpiry = contractExpiry;
     if (hrContactEmail !== undefined) company.hrContactEmail = hrContactEmail;
+    if (accessCode !== undefined) company.accessCode = accessCode?.toUpperCase() || "";
 
     await company.save();
 
@@ -374,9 +377,10 @@ router.patch("/:companyId/assign-doctors", async (req, res) => {
 
 router.get("/:id", async (req, res) => {
   try {
-    const company = await Company.findById(req.params.id);
+    const company = await Company.findById(req.params.id).lean();
     if (!company) return res.status(404).json({ error: "Not found" });
-    res.json(company);
+    // Ensure logo field always exists in response (handles companies created before logo field was added)
+    res.json({ ...company, logo: company.logo || "" });
   } catch {
     res.status(500).json({ error: "Server error" });
   }

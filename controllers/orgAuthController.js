@@ -51,7 +51,8 @@ export const sendSignupOtp = async (req, res) => {
       return res.status(400).json({ message: "Name, email and password are required." });
     }
 
-    const domain = email.split("@")[1];
+    const normalizedEmail = email.toLowerCase().trim();
+    const domain = normalizedEmail.split("@")[1];
     if (!domain) {
       return res.status(400).json({ message: "Invalid email address." });
     }
@@ -63,7 +64,7 @@ export const sendSignupOtp = async (req, res) => {
       });
     }
 
-    const existing = await OrgMember.findOne({ email });
+    const existing = await OrgMember.findOne({ email: normalizedEmail });
     if (existing) {
       return res.status(409).json({ message: "An account with this email already exists." });
     }
@@ -71,7 +72,7 @@ export const sendSignupOtp = async (req, res) => {
     const otp = generateOtp();
     const expiresAt = Date.now() + 10 * 60 * 1000;
 
-    otpStore.set(email, {
+    otpStore.set(normalizedEmail, {
       otp,
       expiresAt,
       purpose: "signup",
@@ -82,7 +83,7 @@ export const sendSignupOtp = async (req, res) => {
     });
 
     await sendOtpEmail(
-      email,
+      normalizedEmail,
       otp,
       "Mindery — Verify your work email",
       `Hi <strong>${name}</strong>, your OTP to complete signup on Mindery is:`
@@ -170,7 +171,7 @@ export const loginOrgMember = async (req, res) => {
       return res.status(400).json({ message: "Email and password are required." });
     }
 
-    const member = await OrgMember.findOne({ email });
+    const member = await OrgMember.findOne({ email: email.toLowerCase().trim() });
     if (!member) {
       return res.status(401).json({ message: "Invalid email or password." });
     }
@@ -213,7 +214,7 @@ export const forgotPasswordSendOtp = async (req, res) => {
       return res.status(400).json({ message: "Email is required." });
     }
 
-    const member = await OrgMember.findOne({ email });
+    const member = await OrgMember.findOne({ email: email.toLowerCase().trim() });
     if (!member) {
       return res.status(200).json({ message: "If this email is registered, an OTP has been sent." });
     }
@@ -265,7 +266,7 @@ export const resetPassword = async (req, res) => {
     }
 
     const hashedPassword = await bcrypt.hash(newPassword, 10);
-    await OrgMember.findOneAndUpdate({ email }, { password: hashedPassword });
+    await OrgMember.findOneAndUpdate({ email: email.toLowerCase().trim() }, { password: hashedPassword });
 
     otpStore.delete(email);
 
