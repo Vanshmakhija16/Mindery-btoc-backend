@@ -846,15 +846,20 @@ export const authMiddleware = (req, res, next) => {
 
 router.get("/", async (req, res) => {
   try {
-    const all = await Assessment.find({}, "id title slug description category questions").lean();
-    const result = all.map(a => ({
-      id: a.id,
-      title: a.title,
-      slug: a.slug,
-      description: a.description,
-      category: a.category,
-      itemCount: (a.questions || []).length,
-    }));
+    const all = await Assessment.find({}, "id title slug description category questions isPaid isActive").lean();
+    const result = all
+      .filter(a => a.isActive !== false) // hide inactive assessments from public
+      .map(a => ({
+        id: a.id,
+        title: a.title,
+        slug: a.slug,
+        description: a.description,
+        category: a.category,
+        itemCount: (a.questions || []).length,
+        isPaid: a.isPaid || false,    // true = locked/premium
+        isLocked: a.isPaid || false,  // alias so frontend can use either
+        isActive: a.isActive !== false,
+      }));
     res.json(result);
   } catch (err) {
     console.error("Error fetching assessments:", err);
@@ -944,6 +949,22 @@ router.post("/:slug/submit", async (req, res) => {
         ];
         reverseMax = 3;
         break;
+      case "big-five":
+        // Reverse-scored items for Big Five (weights 1-5, reversal = 6 - value)
+        // E reverse: q6,q16,q26,q36,q46
+        // A reverse: q2,q12,q22,q32
+        // C reverse: q8,q18,q28,q38
+        // N reverse: q4,q14,q24,q29,q34,q39,q44,q49
+        // O reverse: q10,q20,q30
+        reverseItems = [
+          "q6","q16","q26","q36","q46",
+          "q2","q12","q22","q32",
+          "q8","q18","q28","q38",
+          "q4","q14","q24","q29","q34","q39","q44","q49",
+          "q10","q20","q30"
+        ];
+        reverseMax = 6; // weights are 1-5, so reverse = 6 - value
+        break;
       default:
         reverseItems = [];
     }
@@ -1006,6 +1027,38 @@ router.post("/:slug/submit", async (req, res) => {
           sleep_satisfaction: ["q24","q25","q26","q27","q28"]
         };
         break;
+      case "big-five":
+        // domainMap lists ALL 10 questions per trait (both forward + reverse).
+        // Reversal is handled by reverseItems above (6 - value for 1-5 scale).
+        // Forward questions score directly; reverse questions are flipped by the engine.
+        domainMap = {
+          Extroversion:      ["q1","q6","q11","q16","q21","q26","q31","q36","q41","q46"],
+          Agreeableness:     ["q2","q7","q12","q17","q22","q27","q32","q37","q42","q47"],
+          Conscientiousness: ["q3","q8","q13","q18","q23","q28","q33","q38","q43","q48"],
+          Neuroticism:       ["q4","q9","q14","q19","q24","q29","q34","q39","q44","q49"],
+          Openness:          ["q5","q10","q15","q20","q25","q30","q35","q40","q45","q50"]
+        };
+        break;
+      case "leadership-style":
+        // Authoritarian: Q1,Q2,Q6,Q10,Q15,Q16 (sum 6-30)
+        // Democratic: Q4,Q5,Q8,Q11,Q14,Q18 (sum 6-30)
+        // LaissezFaire: Q3,Q7,Q9,Q12,Q13,Q17 (sum 6-30)
+        domainMap = {
+          Authoritarian: ["q1","q2","q6","q10","q15","q16"],
+          Democratic:    ["q4","q5","q8","q11","q14","q18"],
+          LaissezFaire:  ["q3","q7","q9","q12","q13","q17"]
+        };
+        break;
+      case "beis10":
+        // 5 subscales of 2 questions each, all weighted 1-5, no reversal
+        domainMap = {
+          Appraisal_Own_Emotions:     ["q1","q2"],
+          Appraisal_Others_Emotions:  ["q3","q4"],
+          Regulation_Own_Emotions:    ["q5","q6"],
+          Regulation_Others_Emotions: ["q7","q8"],
+          Utilisation_Emotions:       ["q9","q10"]
+        };
+        break;
       default:
         domainMap = {};
     }
@@ -1055,13 +1108,51 @@ router.post("/:slug/submit", async (req, res) => {
           if (score <= 20) return { status: "Good Sleep Quality", message: "Your sleep quality is good." };
           if (score <= 50) return { status: "Moderate Sleep Problems", message: "You have moderate sleep issues." };
           return { status: "Poor Sleep Quality", message: "Your sleep quality is poor — consider consulting a professional." };
+        case "big-five":
+          // totalScore is the sum of all 50 questions (0-4 each, reversal baked in)
+          // Trait breakdown is in domainScores. Each trait: 0-20 for 5F/5R, 0-24 for 6F/4R, etc.
+          // Interpretation: use domainScores in frontend. totalScore range 0-100.
+          return { status: "Personality Profile", message: "Your Big Five personality profile is shown in the domain breakdown. Higher scores indicate stronger expression of each trait." };
+        case "leadership-style": {
+          // Each domain scored 6-30. Dominant style = highest domain score.
+          // totalScore = all 18 questions summed (18-90 range), maxScore=30 is per-style max
+          const getLSLevel = (s) => {
+            if (s >= 26) return "Very High";
+            if (s >= 21) return "High";
+            if (s >= 16) return "Moderate";
+            if (s >= 11) return "Low";
+            return "Very Low";
+          };
+          return { status: "Leadership Profile", message: "Your dominant leadership style is shown in the domain breakdown. Score 26-30 = Very High, 21-25 = High, 16-20 = Moderate, 11-15 = Low, 6-10 = Very Low." };
+        }
+        case "beis10":
+          // total range 10-50, no reversal
+          if (score >= 45) return { status: "High Emotional Intelligence", message: "Your emotional intelligence is well-developed across most domains." };
+          if (score >= 35) return { status: "Average Emotional Intelligence", message: "Your emotional intelligence is in the average range. See domain breakdown for specific strengths and areas to develop." };
+          if (score >= 25) return { status: "Below Average Emotional Intelligence", message: "Some areas of emotional intelligence need attention. Your domain breakdown shows where to focus." };
+          return { status: "Low Emotional Intelligence", message: "Several emotional intelligence domains show significant room for growth. Consider professional support." };
         default:
           return { status: "Unknown", message: "Scoring not defined." };
       }
     };
 
     const { status, message } = interpret(assessment.slug, totalScore);
-    const percentage = assessment.maxScore ? Math.round((totalScore / assessment.maxScore) * 100) : 0;
+
+    // For multi-domain assessments, the stored maxScore refers to a per-domain max,
+    // not the total across all questions. Compute the real total max for the percentage.
+    let effectiveMaxScore = assessment.maxScore || 0;
+    if (assessment.slug === "leadership-style") {
+      // 18 questions × max weight 5 = 90 total max
+      effectiveMaxScore = (assessment.questions || []).length * 5;
+    } else if (assessment.slug === "big-five") {
+      // 50 questions × max weight 5 (after reversal applied) = 250 total max
+      effectiveMaxScore = (assessment.questions || []).length * 5;
+    } else if (assessment.slug === "beis10") {
+      // 10 questions × max weight 5 = 50 total max
+      effectiveMaxScore = (assessment.questions || []).length * 5;
+    }
+
+    const percentage = effectiveMaxScore ? Math.round((totalScore / effectiveMaxScore) * 100) : 0;
 
     // Create report document with userPhone (Ensure your Schema matches this field name)
     const newReport = new Report({
@@ -1070,7 +1161,7 @@ router.post("/:slug/submit", async (req, res) => {
       assessmentSlug: assessment.slug,
       assessmentTitle: assessment.title,
       score: totalScore,
-      maxScore: assessment.maxScore || 0,
+      maxScore: effectiveMaxScore,
       percentage,
       status,
       message,
@@ -1083,9 +1174,9 @@ router.post("/:slug/submit", async (req, res) => {
     res.json({
       _id: newReport._id,
       score: totalScore,
-      maxScore: assessment.maxScore,
+      maxScore: effectiveMaxScore,
       percentage,
-      report: `${totalScore} / ${assessment.maxScore}`,
+      report: `${totalScore} / ${effectiveMaxScore}`,
       status,
       message,
       unanswered,
@@ -1233,6 +1324,22 @@ router.post("/create", async (req, res) => {
   } catch (err) {
     console.error("Create assessment error:", err);
     res.status(500).json({ error: "Server error", details: err.message });
+  }
+});
+
+// ✅ PUT /api/assessments/update/:id — Admin locks/unlocks or shows/hides an assessment
+router.put("/update/:id", async (req, res) => {
+  try {
+    const { isPaid, isActive } = req.body;
+    const assessment = await Assessment.findById(req.params.id);
+    if (!assessment) return res.status(404).json({ error: "Assessment not found" });
+    if (isPaid !== undefined) assessment.isPaid = isPaid;
+    if (isActive !== undefined) assessment.isActive = isActive;
+    await assessment.save();
+    res.json({ success: true, assessment });
+  } catch (err) {
+    console.error("Update assessment error:", err);
+    res.status(500).json({ error: "Server error" });
   }
 });
 

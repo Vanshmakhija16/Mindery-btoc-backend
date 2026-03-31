@@ -22,7 +22,7 @@ const orgAssessmentResultSchema = new mongoose.Schema(
       },
     ],
     totalScore: { type: Number, required: true },
-    severity: { type: String, required: true },
+    severity: { type: String, required: true, default: "Unknown" },
     completedAt: { type: Date, default: Date.now },
     isPersonalized: { type: Boolean, default: false },
     personalizedFor: { type: String, default: null },
