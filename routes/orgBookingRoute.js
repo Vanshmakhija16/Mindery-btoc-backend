@@ -89,6 +89,7 @@ router.post("/", authMiddleware, async (req, res) => {
     // ── Create booking with meetLink saved ──────────────────────────
     const booking = await Booking.create({
       doctorId,
+      doctorName: doctor.name,
       employeeId: memberId,
       name: memberName,
       email: memberEmail,
