@@ -5,8 +5,8 @@ dotenv.config();
 const GETGABS_URL = "https://app.getgabs.com/whatsappbusiness/send-templated-message";
 
 console.log("GETGABS_API_KEY:", process.env.GETGABS_API_KEY ? "LOADED" : "MISSING");
-console.log("GETGABS_SENDER:", process.env.GETGABS_SENDER);
-console.log("GETGABS_CAMPAIGN_ID:", process.env.GETGABS_CAMPAIGN_ID);
+// console.log("GETGABS_SENDER:", process.env.GETGABS_SENDER);
+// console.log("GETGABS_CAMPAIGN_ID:", process.env.GETGABS_CAMPAIGN_ID);
 
 // Normalize phone number to international format
 const normalizePhone = (phone) => {

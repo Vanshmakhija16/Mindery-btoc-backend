@@ -55,9 +55,13 @@ app.use(express.urlencoded({ limit: "20mb", extended: true }));
 const allowedOrigins = [
   "https://mytherapy.minderytech.com",
   "https://www.mytherapy.minderytech.com",
+  "https://dashboard-frontend-wheat-kappa.vercel.app",
   "http://localhost:5173",
   "http://localhost:3000",
-];
+  // dynamically include CLIENT_URL and BASE_URL from .env if set
+  ...(process.env.CLIENT_URL ? [process.env.CLIENT_URL] : []),
+  ...(process.env.BASE_URL   ? [process.env.BASE_URL]   : []),
+].filter(Boolean);
 
 const corsOptions = {
   origin: (origin, callback) => {
