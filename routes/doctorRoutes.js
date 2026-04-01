@@ -701,8 +701,7 @@ router.patch("/:id/slots", validateObjectId, async (req, res) => {
     const doctor = await btocDoctor.findById(req.params.id);
     if (!doctor) return res.status(404).json({ success: false, message: "Doctor not found" });
 
-    doctor.dateAvailability = doctor.dateAvailability.filter(d => d.date !== date);
-
+    // ✅ Allow multiple time windows per date — just push, do NOT filter out existing entries
     doctor.dateAvailability.push({
       date,
       startTime,
@@ -718,7 +717,7 @@ router.patch("/:id/slots", validateObjectId, async (req, res) => {
     return res.json({
       success: true,
       message: "Slots updated successfully",
-      data: { date, slots: doctor.getAvailabilityForDate(date) }
+      data: { date, slots: doctor.getSlotsForDate(date) }
     });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });

@@ -236,11 +236,13 @@ btoDoctorSchema.methods.getSlotsForDate = function (
     return slots;
   };
 
-  /* Date-specific override */
-  const dateRule = this.dateAvailability.find(
+  /* Date-specific override — collect ALL windows for this date and merge */
+  const dateRules = this.dateAvailability.filter(
     (d) => d.date === dateStr && d.isActive
   );
-  if (dateRule) return buildSlots(dateRule);
+  if (dateRules.length > 0) {
+    return dateRules.flatMap((rule) => buildSlots(rule));
+  }
 
   /* Weekly fallback */
   const dayName = new Date(dateStr).toLocaleDateString("en-US", {
@@ -381,39 +383,41 @@ btoDoctorSchema.methods.getUpcomingAvailability = function (days = 30) {
     const dateStr = date.toISOString().slice(0, 10);
     const weekday = date.toLocaleDateString("en-US", { weekday: "long" });
 
-    const dateRule = this.dateAvailability.find(
+    // ✅ Collect ALL date-specific windows for this date (supports multiple gaps)
+    const dateRules = this.dateAvailability.filter(
       (d) => d.date === dateStr && d.isActive
     );
     const weeklyRule = this.weeklyAvailability.find(
       (w) => w.day === weekday && w.isActive
     );
 
-    const rule = dateRule || weeklyRule;
-    if (!rule) continue;
+    const rules = dateRules.length > 0 ? dateRules : weeklyRule ? [weeklyRule] : [];
+    if (rules.length === 0) continue;
 
     const duration = activeDuration; // ✅ Use consultation duration, not stored slotDuration
 
-    const start = toMinutes(rule.startTime);
-    const end = toMinutes(rule.endTime);
+    const allSlots = [];
+    for (const rule of rules) {
+      const start = toMinutes(rule.startTime);
+      const end = toMinutes(rule.endTime);
 
-    // ✅ Use rule's own breaks only
-    const breaks = (rule.breaks || [])
-      .filter((b) => b?.startTime && b?.endTime && b.startTime < b.endTime)
-      .map((b) => ({
-        start: toMinutes(b.startTime),
-        end: toMinutes(b.endTime),
-      }));
+      const breaks = (rule.breaks || [])
+        .filter((b) => b?.startTime && b?.endTime && b.startTime < b.endTime)
+        .map((b) => ({
+          start: toMinutes(b.startTime),
+          end: toMinutes(b.endTime),
+        }));
 
-    const slots = [];
-    for (let t = start; t + duration <= end; t += duration) {
-      const overlapsBreak = breaks.some(
-        (b) => t < b.end && t + duration > b.start
-      );
-      if (overlapsBreak) continue;
-      slots.push(`${toTime(t)} - ${toTime(t + duration)}`);
+      for (let t = start; t + duration <= end; t += duration) {
+        const overlapsBreak = breaks.some(
+          (b) => t < b.end && t + duration > b.start
+        );
+        if (overlapsBreak) continue;
+        allSlots.push(`${toTime(t)} - ${toTime(t + duration)}`);
+      }
     }
 
-    if (slots.length > 0) availability[dateStr] = slots;
+    if (allSlots.length > 0) availability[dateStr] = allSlots;
   }
 
   return availability;
@@ -542,29 +546,35 @@ btoDoctorSchema.methods.getUpcomingAvailability45 = function (days = 30) {
 
     const weekday = date.toLocaleDateString("en-US", { weekday: "long" });
 
-    const rule =
-      this.dateAvailability.find((d) => d.date === dateStr && d.isActive) ||
-      this.weeklyAvailability.find((w) => w.day === weekday && w.isActive);
+    // ✅ Collect ALL date-specific windows for this date
+    const dateRules45 = this.dateAvailability.filter(
+      (d) => d.date === dateStr && d.isActive
+    );
+    const weeklyRule45 = this.weeklyAvailability.find(
+      (w) => w.day === weekday && w.isActive
+    );
 
-    if (!rule) continue;
+    const rules45 = dateRules45.length > 0 ? dateRules45 : weeklyRule45 ? [weeklyRule45] : [];
+    if (rules45.length === 0) continue;
 
-    const start = toMinutes(rule.startTime);
-    const end = toMinutes(rule.endTime);
+    const allSlots45 = [];
+    for (const rule of rules45) {
+      const start = toMinutes(rule.startTime);
+      const end = toMinutes(rule.endTime);
 
-    const breaks = (rule.breaks || []).map((b) => ({
-      start: toMinutes(b.startTime),
-      end: toMinutes(b.endTime),
-    }));
+      const breaks = (rule.breaks || []).map((b) => ({
+        start: toMinutes(b.startTime),
+        end: toMinutes(b.endTime),
+      }));
 
-    const slots = [];
-    for (let t = start; t + DURATION <= end; t += DURATION) {
-      const overlapsBreak = breaks.some((b) => t < b.end && t + DURATION > b.start);
-      if (overlapsBreak) continue;
-
-      slots.push(`${toTime(t)} - ${toTime(t + DURATION)}`);
+      for (let t = start; t + DURATION <= end; t += DURATION) {
+        const overlapsBreak = breaks.some((b) => t < b.end && t + DURATION > b.start);
+        if (overlapsBreak) continue;
+        allSlots45.push(`${toTime(t)} - ${toTime(t + DURATION)}`);
+      }
     }
 
-    if (slots.length > 0) availability[dateStr] = slots;
+    if (allSlots45.length > 0) availability[dateStr] = allSlots45;
   }
 
   return availability;
