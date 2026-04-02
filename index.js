@@ -42,6 +42,8 @@ import orgAuthRoutes  from "./routes/orgAuthRoutes.js";
 import orgBookingRoute from "./routes/orgBookingRoute.js";
 import orgMemberProfileRoutes from "./routes/orgMemberProfile.routes.js";
 import orgAssessmentRoutes from "./routes/orgAssessmentRoutes.js";
+import monitorAuthRoutes from "./routes/monitorAuthRoutes.js";
+import monitorRoutes from "./routes/monitorRoutes.js";
 
 // ✅ for __dirname in ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -140,6 +142,8 @@ app.use("/api/org-auth", orgAuthRoutes);
 app.use("/api/org-bookings", orgBookingRoute);
 app.use("/api/org-member-profile", orgMemberProfileRoutes);
 app.use("/api/org-assessments", orgAssessmentRoutes);
+app.use("/api/monitor-auth", monitorAuthRoutes);
+app.use("/api/monitor", monitorRoutes);
 
 
 // --------------------
