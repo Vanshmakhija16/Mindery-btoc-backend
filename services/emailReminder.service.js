@@ -40,7 +40,7 @@ export async function sendEmailReminders() {
             <p>
               <b>Doctor:</b> ${booking.doctorName}<br/>
               <b>Date:</b> ${booking.date}<br/>
-              <b>Time:</b> ${booking.slot}<br/>
+              <b>Time:</b> ${(booking.slot || "").split(" - ")[0]}<br/>
               <b>Mode:</b> ${booking.mode}
             </p>
 

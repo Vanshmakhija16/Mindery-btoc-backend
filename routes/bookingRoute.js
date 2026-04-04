@@ -53,7 +53,32 @@ router.post("/", async (req, res) => {
         .json({ success: false, message: "Missing required fields" });
     }
 
-    // 1️⃣ Create booking
+    // 1️⃣ Overlap check — reject if another booking occupies this time slot
+    const [newStart, newEnd] = slot.split(" - ").map((t) => {
+      const [h, m] = t.trim().split(":").map(Number);
+      return h * 60 + m;
+    });
+    if (!isNaN(newStart) && !isNaN(newEnd)) {
+      const existing = await Booking.find({
+        doctorId,
+        date,
+        status: { $ne: "cancelled" },
+      }).select("slot").lean();
+      const overlaps = existing.some((b) => {
+        const parts = (b.slot || "").split(" - ");
+        if (parts.length < 2) return false;
+        const [es, ee] = parts.map((t) => {
+          const [h, m] = t.trim().split(":").map(Number);
+          return h * 60 + m;
+        });
+        return es < newEnd && ee > newStart;
+      });
+      if (overlaps) {
+        return res.status(409).json({ success: false, message: "This slot is no longer available" });
+      }
+    }
+
+    // 2️⃣ Create booking
     const booking = await Booking.create({
       doctorId,
       name,
@@ -78,14 +103,14 @@ router.post("/", async (req, res) => {
       await sendEmail(
         doctor.email,
         "📅 New Appointment Booked",
-        `Hello Dr. ${doctor.name},\n\nA new appointment has been booked:\n\n🧑 Patient: ${name}\n📧 Email: ${email}\n📞 Phone: ${phone || "N/A"}\n📅 Date: ${date}\n⏰ Time: ${slot}\n💬 Mode: ${mode || "video"}\n\nPlease check your dashboard for details.\n\n— Mindery Team`
+        `Hello Dr. ${doctor.name},\n\nA new appointment has been booked:\n\n🧑 Patient: ${name}\n📧 Email: ${email}\n📞 Phone: ${phone || "N/A"}\n📅 Date: ${date}\n⏰ Time: ${slot.split(" - ")[0]}\n💬 Mode: ${mode || "video"}\n\nPlease check your dashboard for details.\n\n— Mindery Team`
       );
 
       // To Patient
       await sendEmail(
         email,
         "✅ Appointment Confirmation",
-        `Hello ${name},\n\nYour session with Dr. ${doctor.name} has been successfully booked.\n\n📅 Date: ${date}\n⏰ Time: ${slot}\n💬 Mode: ${mode || "video"}\n\nYou'll receive reminders closer to your appointment.\n\n— Mindery Team`
+        `Hello ${name},\n\nYour session with Dr. ${doctor.name} has been successfully booked.\n\n📅 Date: ${date}\n⏰ Time: ${slot.split(" - ")[0]}\n💬 Mode: ${mode || "video"}\n\nYou'll receive reminders closer to your appointment.\n\n— Mindery Team`
       );
       console.log(name, doctor.name);
     }
@@ -95,7 +120,7 @@ router.post("/", async (req, res) => {
       const bookingDetails = {
         doctorName: doctor.name,
         date,
-        time: slot,
+        time: slot.split(" - ")[0],
         mode: mode || "video",
         bookingId: booking._id.toString().slice(-8),
         amount: doctor.charges || "Contact Doctor",

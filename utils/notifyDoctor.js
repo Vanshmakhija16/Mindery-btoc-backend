@@ -97,14 +97,14 @@ export async function notifyDoctorByEmail({ doctor, booking, employeeName }) {
 
     await sendEmail({
       to: recipients,
-      subject: `New Booking: ${booking.date} ${booking.slot}`,
+      subject: `New Booking: ${booking.date} ${(booking.slot || "").split(" - ")[0]}`,
       text: `Hi Dr. ${doctorName},
 
 A new session has been booked.
 
 Client: ${clientName}
 Date: ${booking.date}
-Time: ${booking.slot}
+Time: ${(booking.slot || "").split(" - ")[0]}
 Mode: ${modeText}
 Session Link: ${link}
 
@@ -118,7 +118,7 @@ Team Mindery`,
         <p>
           <b>Client:</b> ${clientName}<br/>
           <b>Date:</b> ${booking.date}<br/>
-          <b>Time:</b> ${booking.slot}<br/>
+          <b>Time:</b> ${(booking.slot || "").split(" - ")[0]}<br/>
           <b>Mode:</b> ${modeText}<br/>
           <b>Session Link:</b> ${
             link === "Link will be shared shortly"

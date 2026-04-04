@@ -44,6 +44,7 @@ import orgMemberProfileRoutes from "./routes/orgMemberProfile.routes.js";
 import orgAssessmentRoutes from "./routes/orgAssessmentRoutes.js";
 import monitorAuthRoutes from "./routes/monitorAuthRoutes.js";
 import monitorRoutes from "./routes/monitorRoutes.js";
+import feedbackRoutes from "./routes/feedbackRoutes.js";
 
 // ✅ for __dirname in ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -144,9 +145,10 @@ app.use("/api/org-member-profile", orgMemberProfileRoutes);
 app.use("/api/org-assessments", orgAssessmentRoutes);
 app.use("/api/monitor-auth", monitorAuthRoutes);
 app.use("/api/monitor", monitorRoutes);
+app.use("/api/feedback", feedbackRoutes);
 
 
-// --------------------
+// -------------------- 
 // Google OAuth / Meet
 // --------------------
 app.get("/auth/google/callback", async (req, res) => {

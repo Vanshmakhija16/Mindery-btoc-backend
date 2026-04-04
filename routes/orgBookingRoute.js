@@ -171,7 +171,7 @@ router.post("/", authMiddleware, async (req, res) => {
           employeeName: memberName,
           doctorName: doctor.name,
           date,
-          time: slot,
+          time: slot.split(" - ")[0],
           meetLink: meetLink || "Link will be shared shortly",
         });
       } catch (waErr) {

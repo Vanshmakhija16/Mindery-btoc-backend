@@ -324,6 +324,31 @@ router.post("/verify-and-book", async (req, res) => {
 
       const finalAmount = baseAmount + baseAmount * 0.18;
 
+      /* ---------- OVERLAP CHECK ---------- */
+      const [pNewStart, pNewEnd] = bookingPayload.slot.split(" - ").map((t) => {
+        const [h, m] = t.trim().split(":").map(Number);
+        return h * 60 + m;
+      });
+      if (!isNaN(pNewStart) && !isNaN(pNewEnd)) {
+        const pExisting = await Booking.find({
+          doctorId: bookingPayload.doctorId,
+          date: bookingPayload.date,
+          status: { $ne: "cancelled" },
+        }).select("slot").lean();
+        const pOverlaps = pExisting.some((b) => {
+          const parts = (b.slot || "").split(" - ");
+          if (parts.length < 2) return false;
+          const [es, ee] = parts.map((t) => {
+            const [h, m] = t.trim().split(":").map(Number);
+            return h * 60 + m;
+          });
+          return es < pNewEnd && ee > pNewStart;
+        });
+        if (pOverlaps) {
+          return res.status(409).json({ success: false, message: "This slot is no longer available" });
+        }
+      }
+
       /* ---------- CREATE BOOKING ---------- */
       booking = new Booking({
         doctorId: bookingPayload.doctorId,
@@ -393,7 +418,7 @@ router.post("/verify-and-book", async (req, res) => {
           employeeName: booking.name,
           doctorName: booking.doctorName,
           date: booking.date,
-          time: booking.slot,
+          time: booking.slot.split(" - ")[0],
           meetLink: booking.meetLink,
           __alreadyConfirmed: booking.confirmationSent === true,
         });
@@ -689,6 +714,31 @@ router.post("/verify-offer-and-book", async (req, res) => {
       return res.status(400).json({ message: "Offer not valid for this doctor" });
     }
 
+    /* ---------- OVERLAP CHECK ---------- */
+    const [newStart, newEnd] = slot.split(" - ").map((t) => {
+      const [h, m] = t.trim().split(":").map(Number);
+      return h * 60 + m;
+    });
+    if (!isNaN(newStart) && !isNaN(newEnd)) {
+      const existingBookings = await Booking.find({
+        doctorId,
+        date,
+        status: { $ne: "cancelled" },
+      }).select("slot").lean();
+      const overlaps = existingBookings.some((b) => {
+        const parts = (b.slot || "").split(" - ");
+        if (parts.length < 2) return false;
+        const [es, ee] = parts.map((t) => {
+          const [h, m] = t.trim().split(":").map(Number);
+          return h * 60 + m;
+        });
+        return es < newEnd && ee > newStart;
+      });
+      if (overlaps) {
+        return res.status(409).json({ success: false, message: "This slot is no longer available" });
+      }
+    }
+
     /* ---------- CREATE BOOKING ---------- */
     const booking = new Booking({
       doctorId,
@@ -740,7 +790,7 @@ router.post("/verify-offer-and-book", async (req, res) => {
           employeeName: booking.name,
           doctorName: booking.doctorName,
           date: booking.date,
-          time: booking.slot,
+          time: booking.slot.split(" - ")[0],
           meetLink: booking.meetLink,
           __alreadyConfirmed: booking.confirmationSent === true,
         });

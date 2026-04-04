@@ -170,10 +170,30 @@ const btoDoctorSchema = new mongoose.Schema(
     index: true
   },
   meetLink: {
-     type: String 
+     type: String
     },
 
-
+    /* -------- WEEKLY TEMPLATE -------- */
+    weeklyTemplate: {
+      type: [
+        {
+          day: {
+            type: String,
+            enum: ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"],
+            required: true
+          },
+          isActive: { type: Boolean, default: false },
+          windows: [
+            {
+              startTime: { type: String, required: true },
+              endTime: { type: String, required: true },
+              _id: false
+            }
+          ]
+        }
+      ],
+      default: []
+    },
 
     /* -------- SYSTEM -------- */
     isActive: { type: Boolean, default: true }
@@ -374,8 +394,8 @@ btoDoctorSchema.methods.getUpcomingAvailability = function (days = 30) {
   const toTime = (m) =>
     `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
 
-  // ✅ Use the active consultation duration, fallback to 30
-  const activeDuration = this.consultationOptions?.find(opt => opt.isActive)?.duration || 30;
+  // ✅ Always use 45-minute slots
+  const activeDuration = 45;
 
   for (let i = 0; i < days; i++) {
     const date = new Date(today);
@@ -394,7 +414,7 @@ btoDoctorSchema.methods.getUpcomingAvailability = function (days = 30) {
     const rules = dateRules.length > 0 ? dateRules : weeklyRule ? [weeklyRule] : [];
     if (rules.length === 0) continue;
 
-    const duration = activeDuration; // ✅ Use consultation duration, not stored slotDuration
+    const duration = activeDuration;
 
     const allSlots = [];
     for (const rule of rules) {

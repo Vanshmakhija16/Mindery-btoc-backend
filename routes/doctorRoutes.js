@@ -701,7 +701,10 @@ router.patch("/:id/slots", validateObjectId, async (req, res) => {
     const doctor = await btocDoctor.findById(req.params.id);
     if (!doctor) return res.status(404).json({ success: false, message: "Doctor not found" });
 
-    // ✅ Allow multiple time windows per date — just push, do NOT filter out existing entries
+    // Remove any existing entries for this date before adding the new one
+    // This prevents stale old windows from bleeding into slot generation
+    doctor.dateAvailability = doctor.dateAvailability.filter((d) => d.date !== date);
+
     doctor.dateAvailability.push({
       date,
       startTime,
@@ -2112,6 +2115,97 @@ router.get("/:id/nextSlotOffer", async (req, res) => {
 
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ── PUT /api/doctors/:id/weekly-template ─────────────────────────────────────
+// Save the doctor's weekly availability template.
+// Body: { weeklyTemplate: [{ day, isActive, windows: [{ startTime, endTime }] }] }
+router.put("/:id/weekly-template", validateObjectId, async (req, res) => {
+  try {
+    const { weeklyTemplate } = req.body;
+    if (!Array.isArray(weeklyTemplate)) {
+      return res.status(400).json({ success: false, message: "weeklyTemplate must be an array" });
+    }
+
+    const DAYS = ["monday","tuesday","wednesday","thursday","friday","saturday","sunday"];
+    for (const entry of weeklyTemplate) {
+      if (!DAYS.includes(entry.day)) {
+        return res.status(400).json({ success: false, message: `Invalid day: ${entry.day}` });
+      }
+      if (!Array.isArray(entry.windows)) {
+        return res.status(400).json({ success: false, message: "Each day must have a windows array" });
+      }
+    }
+
+    const doctor = await btocDoctor.findByIdAndUpdate(
+      req.params.id,
+      { $set: { weeklyTemplate } },
+      { new: true, select: "weeklyTemplate" }
+    );
+    if (!doctor) return res.status(404).json({ success: false, message: "Doctor not found" });
+
+    return res.json({ success: true, weeklyTemplate: doctor.weeklyTemplate });
+  } catch (err) {
+    console.error("weekly-template save error:", err);
+    return res.status(500).json({ success: false, message: "Failed to save weekly template" });
+  }
+});
+
+// ── POST /api/doctors/:id/apply-week ─────────────────────────────────────────
+// Apply the weekly template to a specific week, generating dateAvailability entries.
+// Body: { weekStartDate: "YYYY-MM-DD" } — must be a Monday
+router.post("/:id/apply-week", validateObjectId, async (req, res) => {
+  try {
+    const { weekStartDate } = req.body;
+    if (!weekStartDate) {
+      return res.status(400).json({ success: false, message: "weekStartDate is required" });
+    }
+
+    const doctor = await btocDoctor.findById(req.params.id);
+    if (!doctor) return res.status(404).json({ success: false, message: "Doctor not found" });
+
+    const DAYS = ["monday","tuesday","wednesday","thursday","friday","saturday","sunday"];
+
+    // Parse as local date (split the string) to avoid UTC midnight shift
+    // e.g. "2025-03-31" must always mean March 31, regardless of server timezone
+    const [sy, sm, sd] = weekStartDate.split("-").map(Number);
+    if (!sy || !sm || !sd) {
+      return res.status(400).json({ success: false, message: "Invalid weekStartDate" });
+    }
+
+    const newEntries = [];
+    for (let i = 0; i < 7; i++) {
+      // Build the date string directly by arithmetic — no Date object timezone issues
+      const d = new Date(sy, sm - 1, sd + i); // local date
+      const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+      const dayName = DAYS[i]; // i=0→monday … i=6→sunday
+
+      const templateDay = (doctor.weeklyTemplate || []).find(t => t.day === dayName);
+      if (!templateDay || !templateDay.isActive || !templateDay.windows?.length) continue;
+
+      // Remove any existing template-generated entries for this date (not overrides)
+      doctor.dateAvailability = doctor.dateAvailability.filter(da => da.date !== dateStr);
+
+      // Add one entry per window
+      for (const win of templateDay.windows) {
+        doctor.dateAvailability.push({
+          date: dateStr,
+          startTime: win.startTime,
+          endTime: win.endTime,
+          slotDuration: 45,
+          breaks: [],
+          isActive: true,
+        });
+        newEntries.push({ date: dateStr, ...win });
+      }
+    }
+
+    await doctor.save();
+    return res.json({ success: true, applied: newEntries });
+  } catch (err) {
+    console.error("apply-week error:", err);
+    return res.status(500).json({ success: false, message: "Failed to apply week" });
   }
 });
 
