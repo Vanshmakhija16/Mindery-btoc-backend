@@ -134,7 +134,7 @@ app.use("/api/offer", offerRoutes);
 app.use("/api/payment", paymentRoutes);
 app.use("/api/btocAdmin",btocAdminRoutes);
 app.use("/api/jobs", jobRoutes);
-app.use("/api/doctor", clinicalReportRoutes);
+app.use("/api/clinical-reports", clinicalReportRoutes);
 app.use("/api/admin-auth", adminAuthRoutes);
 app.use("/api/contact", contactRoutes);
 app.use("/api/therapy-requests", therapyRequestRoutes);
