@@ -15,6 +15,7 @@ const feedbackSchema = new mongoose.Schema(
     userName:           { type: String, default: "" },
     userEmail:          { type: String, default: "" },
     userPhone:          { type: String, default: "" },
+    companyName:        { type: String, default: "" },
     answers:            { type: [answerSchema], default: [] },
     additionalFeedback: { type: String, default: "" },
     submittedAt:        { type: Date, default: Date.now },

@@ -3,6 +3,8 @@ import jwt from "jsonwebtoken";
 import Feedback from "../models/Feedback.js";
 import Booking from "../models/Booking.js";
 import Employee from "../models/Employee.js";
+import OrgMember from "../models/OrgMember.js";
+import Company from "../models/Company.js";
 
 const router = express.Router();
 
@@ -61,14 +63,36 @@ router.post("/", requireAuth, async (req, res) => {
       return res.status(403).json({ success: false, message: "Only users who have booked a session can submit feedback." });
     }
 
-    // Fetch full employee details from DB
+    // Fetch full user details — try Employee first, then OrgMember
+    let userName = req.userName || "";
+    let userEmail = "";
+    let userPhone = "";
+    let companyName = "";
+
     const employee = await Employee.findById(req.userId).select("name email phone").lean();
+    if (employee) {
+      userName  = employee.name  || userName;
+      userEmail = employee.email || "";
+      userPhone = employee.phone || "";
+    } else {
+      const orgMember = await OrgMember.findById(req.userId).select("name email phone companyId").lean();
+      if (orgMember) {
+        userName  = orgMember.name  || userName;
+        userEmail = orgMember.email || "";
+        userPhone = orgMember.phone || "";
+        if (orgMember.companyId) {
+          const company = await Company.findById(orgMember.companyId).select("name").lean();
+          companyName = company?.name || "";
+        }
+      }
+    }
 
     const feedback = await Feedback.create({
       userId:             req.userId,
-      userName:           employee?.name  || req.userName || "",
-      userEmail:          employee?.email || "",
-      userPhone:          employee?.phone || "",
+      userName,
+      userEmail,
+      userPhone,
+      companyName,
       answers,
       additionalFeedback: additionalFeedback || "",
       submittedAt:        new Date(),
