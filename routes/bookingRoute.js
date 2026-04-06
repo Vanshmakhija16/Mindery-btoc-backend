@@ -372,6 +372,37 @@ router.get("/btocbookings-admin", async (req, res) => {
   }
 });
 
+// UPDATE BOOKING STATUS (doctor, admin, or guest can call this)
+router.patch("/:bookingId/status", async (req, res) => {
+  try {
+    const { bookingId } = req.params;
+    const { status, rescheduleNote } = req.body;
+
+    const allowed = ["booked", "completed", "no_response", "rescheduled"];
+    if (!status || !allowed.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid status. Must be one of: ${allowed.join(", ")}`,
+      });
+    }
+
+    const update = { status };
+    if (status === "rescheduled" && rescheduleNote) {
+      update.rescheduleNote = rescheduleNote;
+    }
+
+    const booking = await Booking.findByIdAndUpdate(bookingId, update, { new: true });
+    if (!booking) {
+      return res.status(404).json({ success: false, message: "Booking not found" });
+    }
+
+    return res.status(200).json({ success: true, data: booking });
+  } catch (err) {
+    console.error("Update booking status error:", err.message);
+    return res.status(500).json({ success: false, message: "Failed to update booking status" });
+  }
+});
+
 // DELETE booking by ID
 router.delete("/booking/:id", async (req, res) => {
   try {

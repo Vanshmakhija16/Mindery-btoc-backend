@@ -82,6 +82,17 @@ const bookingSchema = new mongoose.Schema(
       ref: "Company",
       default: null,
     },
+
+    status: {
+      type: String,
+      enum: ["booked", "completed", "no_response", "rescheduled"],
+      default: "booked",
+    },
+
+    rescheduleNote: {
+      type: String,
+      default: "",
+    },
     // ──────────────────────────────────────────────────────────
   },
   { timestamps: true }

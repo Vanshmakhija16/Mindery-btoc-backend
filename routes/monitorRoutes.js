@@ -24,10 +24,10 @@ function monitorAuth(req, res, next) {
 }
 
 // ── GET /api/monitor/bookings ─────────────────────────────────────────────────
-// Query params: companyId, doctorId, bookingType, date, page, limit
+// Query params: companyId, doctorId, bookingType, date, status, page, limit
 router.get("/bookings", monitorAuth, async (req, res) => {
   try {
-    const { companyId, doctorId, bookingType, date, page = 1, limit = 20 } = req.query;
+    const { companyId, doctorId, bookingType, date, status, page = 1, limit = 20 } = req.query;
 
     const filter = {};
     if (companyId) filter.companyId = companyId;
@@ -43,6 +43,27 @@ router.get("/bookings", monitorAuth, async (req, res) => {
       ];
     } else if (bookingType === "org_free") {
       filter.bookingType = "org_free";
+    }
+
+    // status filter
+    if (status === "booked") {
+      // Upcoming: status is booked/missing AND date is today or future
+      const todayStr = new Date().toISOString().slice(0, 10);
+      filter.$and = [
+        ...(filter.$and || []),
+        { $or: [{ status: "booked" }, { status: { $exists: false } }, { status: null }] },
+        { date: { $gte: todayStr } },
+      ];
+    } else if (status === "not_defined") {
+      // Past sessions where therapist never updated the status
+      const todayStr = new Date().toISOString().slice(0, 10);
+      filter.$and = [
+        ...(filter.$and || []),
+        { $or: [{ status: "booked" }, { status: { $exists: false } }, { status: null }] },
+        { date: { $lt: todayStr } },
+      ];
+    } else if (status && status !== "") {
+      filter.status = status;
     }
 
     const skip = (Number(page) - 1) * Number(limit);
