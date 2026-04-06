@@ -548,8 +548,11 @@ btoDoctorSchema.methods.setSlotsForDate = async function (date, slots) {
 
 btoDoctorSchema.methods.getUpcomingAvailability45 = function (days = 30) {
   const availability = {};
-  const today = new Date();
   const DURATION = 45;
+  const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000; // UTC+5:30
+
+  // Get today's date in IST
+  const nowIST = new Date(Date.now() + IST_OFFSET_MS);
 
   const toMinutes = (t) => {
     const [h, m] = t.split(":").map(Number);
@@ -559,12 +562,25 @@ btoDoctorSchema.methods.getUpcomingAvailability45 = function (days = 30) {
   const toTime = (m) =>
     `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
 
-  for (let i = 0; i < days; i++) {
-    const date = new Date(today);
-    date.setDate(today.getDate() + i);
-    const dateStr = date.toISOString().slice(0, 10);
+  // Return YYYY-MM-DD for a date shifted by IST offset
+  const toISTDateStr = (d) => {
+    const ist = new Date(d.getTime() + IST_OFFSET_MS);
+    return ist.toISOString().slice(0, 10);
+  };
 
-    const weekday = date.toLocaleDateString("en-US", { weekday: "long" });
+  // Return weekday name for a date in IST
+  const WEEKDAYS = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+  const toISTWeekday = (d) => {
+    const ist = new Date(d.getTime() + IST_OFFSET_MS);
+    return WEEKDAYS[ist.getUTCDay()];
+  };
+
+  for (let i = 0; i < days; i++) {
+    const date = new Date(nowIST);
+    date.setUTCDate(nowIST.getUTCDate() + i);
+    const dateStr = toISTDateStr(date);
+
+    const weekday = toISTWeekday(date);
 
     // ✅ Collect ALL date-specific windows for this date
     const dateRules45 = this.dateAvailability.filter(
