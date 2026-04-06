@@ -47,8 +47,8 @@ const authMiddleware = async (req, res, next) => {
 
 const router = express.Router();
 
-const ADMIN_EMAIL = "rahul3@gmail.com";
-const ADMIN_PASSWORD = "123456"; // Use env vars or hash in production
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 
 // --------------------- SIGNUP ---------------------
 /**

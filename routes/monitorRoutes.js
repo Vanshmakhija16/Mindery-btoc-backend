@@ -24,14 +24,15 @@ function monitorAuth(req, res, next) {
 }
 
 // ── GET /api/monitor/bookings ─────────────────────────────────────────────────
-// Query params: companyId, doctorId, bookingType, page, limit
+// Query params: companyId, doctorId, bookingType, date, page, limit
 router.get("/bookings", monitorAuth, async (req, res) => {
   try {
-    const { companyId, doctorId, bookingType, page = 1, limit = 20 } = req.query;
+    const { companyId, doctorId, bookingType, date, page = 1, limit = 20 } = req.query;
 
     const filter = {};
     if (companyId) filter.companyId = companyId;
     if (doctorId)  filter.doctorId  = doctorId;
+    if (date)      filter.date      = date;  // date is stored as a string e.g. "2024-12-24"
 
     // "paid" = explicitly "paid" OR field missing/null (older B2C bookings)
     if (bookingType === "paid") {
