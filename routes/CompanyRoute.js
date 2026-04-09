@@ -89,7 +89,7 @@ const requireRole = (role) => (req, res, next) => {
 // ✅ Add a new company (UPDATED — now accepts sessionQuota, contractExpiry, hrContactEmail)
 router.post("/add", async (req, res) => {
   try {
-const { name, logo, domainPatterns, sessionQuota, contractExpiry, hrContactEmail, accessCode } = req.body;
+const { name, logo, domainPatterns, sessionQuota, contractExpiry, hrContactEmail } = req.body;
     if (!name || !domainPatterns || !Array.isArray(domainPatterns) || domainPatterns.length === 0) {
       return res.status(400).json({ error: "Please provide company name and at least one domain pattern" });
     }
@@ -106,8 +106,6 @@ const { name, logo, domainPatterns, sessionQuota, contractExpiry, hrContactEmail
       sessionQuota: sessionQuota || 50,
       contractExpiry: contractExpiry || null,
       hrContactEmail: hrContactEmail || "",
-      accessCode: accessCode?.toUpperCase() || "",
-
     });
 
     await company.save();
@@ -167,119 +165,10 @@ router.get("/all", authMiddleware, requireRole("admin"), async (req, res) => {
   }
 });
 
-// ✅ Validate org access code + check quota
-router.post("/validate-access", async (req, res) => {
-  try {
-    const { companyId, accessCode } = req.body;
-        console.log(companyId , accessCode)
-
-
-    if (!companyId || !accessCode) {
-      return res.status(400).json({ success: false, message: "Company ID and access code required" });
-    }
-
-    const company = await Company.findById(companyId);
-    console.log(company)
-    if (!company) {
-      return res.status(404).json({ success: false, message: "Organization not found" });
-    }
-
-    // Check access code matches
-    if (company.accessCode !== accessCode.trim().toUpperCase()) {
-      return res.status(400).json({ success: false, message: "Invalid access code" });
-    }
-
-    // Check contract not expired
-    if (company.contractExpiry && new Date(company.contractExpiry) < new Date()) {
-      return res.status(400).json({ success: false, message: "Your organization's contract has expired" });
-    }
-
-    // Check quota remaining
-    if (company.sessionsUsed >= company.sessionQuota) {
-      return res.status(400).json({ success: false, message: "Your organization's free session quota is exhausted" });
-    }
-
-    return res.status(200).json({
-      success: true,
-      message: "Access code valid",
-      remaining: company.sessionQuota - company.sessionsUsed,
-    });
-  } catch (err) {
-    console.error("Validate access error:", err);
-    return res.status(500).json({ success: false, message: "Server error" });
-  }
-});
-
-// ✅ Create a free org booking (skip Razorpay)
-router.post("/org-booking", async (req, res) => {
-  try {
-    const {
-      companyId, accessCode, employeeId,
-      doctorId, name, phone, email,
-      date, slot, mode, duration, doctorName,
-    } = req.body;
-
-    const company = await Company.findById(companyId);
-    if (!company) return res.status(404).json({ success: false, message: "Organization not found" });
-
-    // Re-validate code and quota
-    if (company.accessCode !== accessCode.trim().toUpperCase()) {
-      return res.status(400).json({ success: false, message: "Invalid access code" });
-    }
-    if (company.contractExpiry && new Date(company.contractExpiry) < new Date()) {
-      return res.status(400).json({ success: false, message: "Contract expired" });
-    }
-    if (company.sessionsUsed >= company.sessionQuota) {
-      return res.status(400).json({ success: false, message: "Quota exhausted" });
-    }
-
-    // ✅ Check if this member already used their 1 free session
-    const existingBooking = await Booking.findOne({
-      email: email || null,
-      bookingType: "org_free",
-      companyId,
-    });
-    if (existingBooking) {
-      return res.status(400).json({
-        success: false,
-        message: "You have already used your 1 free company session.",
-        alreadyBooked: true,
-      });
-    }
-
-    // Create booking with bookingType org_free
-    const booking = await Booking.create({
-      doctorId,
-      doctorName,
-      employeeId,
-      name,
-      phone,
-      email: email || null,
-      date,
-      slot,
-      mode,
-      amount: 0,
-      duration,
-      bookingType: "org_free",
-      companyId,
-      payment: { status: "org_free" },
-    });
-
-    // Increment sessionsUsed on company
-    company.sessionsUsed = (company.sessionsUsed || 0) + 1;
-    await company.save();
-
-    return res.status(201).json({ success: true, booking });
-  } catch (err) {
-    console.error("Org booking error:", err);
-    return res.status(500).json({ success: false, message: "Org booking failed" });
-  }
-});
-
 // ✅ Update company details (name, quota, expiry, hrEmail)
 router.put("/:id", async (req, res) => {
   try {
-    const { name, logo, domainPatterns, sessionQuota, contractExpiry, hrContactEmail, accessCode } = req.body;
+    const { name, logo, domainPatterns, sessionQuota, contractExpiry, hrContactEmail } = req.body;
 
     const company = await Company.findById(req.params.id);
     if (!company) return res.status(404).json({ error: "Company not found" });
@@ -290,7 +179,6 @@ router.put("/:id", async (req, res) => {
     if (sessionQuota !== undefined) company.sessionQuota = sessionQuota;
     if (contractExpiry !== undefined) company.contractExpiry = contractExpiry;
     if (hrContactEmail !== undefined) company.hrContactEmail = hrContactEmail;
-    if (accessCode !== undefined) company.accessCode = accessCode?.toUpperCase() || "";
 
     await company.save();
 

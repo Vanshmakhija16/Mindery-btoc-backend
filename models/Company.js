@@ -34,13 +34,6 @@ const companySchema = new mongoose.Schema(
       trim: true,
       default: "",
     },
-    accessCode: {
-    type: String,
-    default: "",
-    uppercase: true,
-    trim: true,
-  },
-
     assignedAssessments: [
       {
         assessmentId: { type: mongoose.Schema.Types.ObjectId, ref: "Assessment" },
