@@ -45,6 +45,9 @@ import orgAssessmentRoutes from "./routes/orgAssessmentRoutes.js";
 import monitorAuthRoutes from "./routes/monitorAuthRoutes.js";
 import monitorRoutes from "./routes/monitorRoutes.js";
 import feedbackRoutes from "./routes/feedbackRoutes.js";
+import courseRoutes from "./routes/courseRoutes.js";
+import coursePaymentRoutes from "./routes/coursePaymentRoutes.js";
+
 
 // ✅ for __dirname in ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -146,7 +149,8 @@ app.use("/api/org-assessments", orgAssessmentRoutes);
 app.use("/api/monitor-auth", monitorAuthRoutes);
 app.use("/api/monitor", monitorRoutes);
 app.use("/api/feedback", feedbackRoutes);
-
+app.use("/api/courses", courseRoutes);
+app.use("/api/course-payment", coursePaymentRoutes);
 
 // -------------------- 
 // Google OAuth / Meet

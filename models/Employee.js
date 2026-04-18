@@ -21,8 +21,8 @@ const employeeSchema = new mongoose.Schema(
     phone: {
       type: String,
       unique: true,
-     required: true,
-      sparse: true, 
+      required: true,
+      sparse: true,
       match: [/^[0-9]{10,15}$/, "Invalid phone number"],
     },
 
