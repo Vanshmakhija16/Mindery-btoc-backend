@@ -4,6 +4,7 @@ import BtocDoctor from "../models/btocDoctor.js";
 import EmployeeAppointment from "../models/EmployeeAppointment.js";
 import Booking from "../models/Booking.js";
 import adminAuth from "../middlewares/adminAuth.js";
+import CaTherapist from "../models/CaTherapist.js";
 
 const router = express.Router();
 
@@ -248,5 +249,72 @@ router.get("/doctors/:doctorId/appointments" , async (req, res) => {
 
 
 
+
+// ─── CANADA PORTAL ADMIN ROUTES ──────────────────────────────────────────────
+
+// GET /api/btocAdmin/ca/all-doctors
+router.get("/ca/all-doctors", async (req, res) => {
+  try {
+    const doctors = await BtocDoctor.find({ isActive: true }).select(
+      "name email profilePhoto availabilityType consultationOptions onlineModes"
+    );
+    const caEntries = await CaTherapist.find({}).select(
+      "doctorId isActive cadPrice firstSessionCadPrice displayTimezone"
+    );
+    const caMap = {};
+    caEntries.forEach((e) => { caMap[e.doctorId.toString()] = e; });
+
+    const result = doctors.map((d) => ({
+      _id: d._id,
+      name: d.name,
+      email: d.email,
+      profilePhoto: d.profilePhoto,
+      consultationOptions: d.consultationOptions,
+      caAssigned: !!caMap[d._id.toString()],
+      caActive: caMap[d._id.toString()]?.isActive || false,
+      caEntryId: caMap[d._id.toString()]?._id || null,
+    }));
+
+    res.json({ success: true, data: result });
+  } catch (err) {
+    console.error("CA all-doctors error:", err);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
+// POST /api/btocAdmin/ca/assign
+router.post("/ca/assign", async (req, res) => {
+  try {
+    const { doctorId } = req.body;
+    console.log("CA assign called, doctorId:", doctorId);
+    if (!doctorId) return res.status(400).json({ success: false, message: "doctorId required" });
+
+    const doctor = await BtocDoctor.findById(doctorId);
+    if (!doctor) return res.status(404).json({ success: false, message: "Doctor not found" });
+
+    const entry = await CaTherapist.findOneAndUpdate(
+      { doctorId },
+      { doctorId, isActive: true, displayTimezone: "America/Toronto", assignedBy: "admin" },
+      { upsert: true, new: true }
+    );
+    res.json({ success: true, message: "Doctor assigned to CA portal", data: entry });
+  } catch (err) {
+    console.error("CA assign error:", err);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
+// DELETE /api/btocAdmin/ca/remove/:doctorId
+router.delete("/ca/remove/:doctorId", async (req, res) => {
+  try {
+    await CaTherapist.findOneAndUpdate(
+      { doctorId: req.params.doctorId },
+      { isActive: false }
+    );
+    res.json({ success: true, message: "Doctor removed from CA portal" });
+  } catch (err) {
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+});
 
 export default router;

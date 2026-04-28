@@ -16,8 +16,6 @@ import User from "./models/User.js";
 import appointmentRoutes from "./routes/appointmentRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
 import assessmentsRoute from "./routes/assessments.js";
-// ✅ FIX: Admin assessment routes (getall, seed) must be registered BEFORE assessmentsRoute
-// because assessmentsRoute has a wildcard /:slug that swallows /getall etc.
 import adminAssessmentRoutes from "./routes/adminAssessmentRoutes.js";
 import reportRoutes from "./routes/reportRoutes.js";
 import CompanyRoute from "./routes/CompanyRoute.js";
@@ -47,12 +45,14 @@ import monitorRoutes from "./routes/monitorRoutes.js";
 import feedbackRoutes from "./routes/feedbackRoutes.js";
 import courseRoutes from "./routes/courseRoutes.js";
 import coursePaymentRoutes from "./routes/coursePaymentRoutes.js";
+import caRoutes from "./routes/caRoutes.js";
 
+console.log("caRoutes imported successfully");
 
-// ✅ for __dirname in ES modules
+console.log("MONGO_URI:", process.env.MONGO_URI);
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
 
 const app = express();
 app.use(express.json({ limit: "20mb" }));
@@ -61,17 +61,23 @@ app.use(express.urlencoded({ limit: "20mb", extended: true }));
 const allowedOrigins = [
   "https://mytherapy.minderytech.com",
   "https://www.mytherapy.minderytech.com",
-  "https://dashboard-frontend-wheat-kappa.vercel.app",
+
+  // Canada domain (final)
+  "https://mindery.ca",
+  "https://www.mindery.ca",
+
+  // ✅ ADD THIS (temporary Azure URL)
+  "https://jolly-grass-04ca3ff1e.7.azurestaticapps.net",
+  
+
   "http://localhost:5173",
   "http://localhost:3000",
-  // dynamically include CLIENT_URL and BASE_URL from .env if set
   ...(process.env.CLIENT_URL ? [process.env.CLIENT_URL] : []),
   ...(process.env.BASE_URL   ? [process.env.BASE_URL]   : []),
 ].filter(Boolean);
 
 const corsOptions = {
   origin: (origin, callback) => {
-    // allow same-origin / server-to-server / curl / postman (no Origin header)
     if (!origin) return callback(null, true);
     if (allowedOrigins.includes(origin)) return callback(null, true);
     return callback(new Error("Not allowed by CORS"));
@@ -82,17 +88,14 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
-
 
 // --------------------
 // Auth Middleware
 // --------------------
 export const authMiddleware = (req, res, next) => {
-  const token = req.headers.authorization?.split(" ")[1]; // Bearer <token>
+  const token = req.headers.authorization?.split(" ")[1];
   if (!token) return res.status(401).json({ success: false, message: "No token provided" });
-
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     req.userId = decoded.id || decoded._id;
@@ -118,15 +121,11 @@ app.use("/api/auth", authRoutes);
 app.use("/api/whatsapp", whatsappRoutes);
 app.use("/api/doctor-auth", doctorAuthRoutes);
 app.use("/api/sessions", authMiddleware, sessionRoutes);
-app.use("/api/doctors",doctorRoutes);
+app.use("/api/doctors", doctorRoutes);
 app.use("/api/appointments", authMiddleware, appointmentRoutes);
 app.use("/api/admin", authMiddleware, adminRoutes);
-
-// ✅ IMPORTANT: adminAssessmentRoutes MUST come before assessmentsRoute
-// so /getall, /seed, /user/reports, /report/:id are matched before /:slug wildcard
 app.use("/api/assessments", adminAssessmentRoutes);
 app.use("/api/assessments", assessmentsRoute);
-
 app.use("/api/reports", reportRoutes);
 app.use("/api/companies", CompanyRoute);
 app.use("/api/employee", employeeAuthRoutes);
@@ -135,7 +134,7 @@ app.use("/api/bookingRoute", bookingRoute);
 app.use("/api/articles", ArticleRoutes);
 app.use("/api/offer", offerRoutes);
 app.use("/api/payment", paymentRoutes);
-app.use("/api/btocAdmin",btocAdminRoutes);
+app.use("/api/btocAdmin", btocAdminRoutes);
 app.use("/api/jobs", jobRoutes);
 app.use("/api/clinical-reports", clinicalReportRoutes);
 app.use("/api/admin-auth", adminAuthRoutes);
@@ -151,8 +150,11 @@ app.use("/api/monitor", monitorRoutes);
 app.use("/api/feedback", feedbackRoutes);
 app.use("/api/courses", courseRoutes);
 app.use("/api/course-payment", coursePaymentRoutes);
+app.use("/api/ca", caRoutes);   // ✅ Canada portal routes
 
-// -------------------- 
+console.log("caRoutes mounted at /api/ca");
+
+// --------------------
 // Google OAuth / Meet
 // --------------------
 app.get("/auth/google/callback", async (req, res) => {
@@ -160,7 +162,6 @@ app.get("/auth/google/callback", async (req, res) => {
   try {
     const { tokens } = await oAuth2Client.getToken(code);
     oAuth2Client.setCredentials(tokens);
-
     let googleToken = await GoogleToken.findOne();
     if (!googleToken) {
       googleToken = new GoogleToken({ tokens });
@@ -168,7 +169,6 @@ app.get("/auth/google/callback", async (req, res) => {
       googleToken.tokens = tokens;
     }
     await googleToken.save();
-
     res.send("Google authentication successful! You can now generate Google Meet links.");
   } catch (error) {
     console.error("Error during Google OAuth callback:", error);
@@ -185,7 +185,6 @@ app.get("/generate-meet", async (req, res) => {
     res.status(500).json({ error: "Failed to generate Google Meet link" });
   }
 });
-
 
 // --------------------
 // MongoDB + Server

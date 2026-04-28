@@ -64,7 +64,7 @@ router.post("/create-order", async (req, res) => {
     console.log("🔥 create-order called");
     console.log("📦 Body:", req.body);
 
-    const { doctorId, employeeId } = req.body;
+    const { doctorId, employeeId, country = "IN" } = req.body;
 
     const doctor = await btocDoctor.findById(doctorId);
     console.log("👨‍⚕️ Doctor:", doctor);
@@ -73,23 +73,60 @@ router.post("/create-order", async (req, res) => {
       return res.status(404).json({ message: "Doctor not found" });
     }
 
-    // 1. Base Price
-    let baseAmount = doctor.consultationOptions?.[0]?.price;
+    // 1. Determine pricing based on country
+    let baseAmount;
+    let displayCurrency;
+    let displaySymbol;
 
-    if (!baseAmount || baseAmount <= 0) {
-      return res.status(400).json({ message: "Doctor price not configured" });
+    if (country === "IN") {
+      // India: Use INR price directly
+      baseAmount = doctor.consultationOptions?.[0]?.price || 500;
+      displayCurrency = "INR";
+      displaySymbol = "₹";
+    } else {
+      // Foreign: Use CAD price converted to INR
+      const caEntry = await CaTherapist.findOne({ doctorId, isActive: true });
+      const existingBooking = await Booking.findOne({ employeeId, "payment.status": "paid" });
+      const isFirstSession = !existingBooking;
+
+      const regularCadPrice = caEntry?.cadPrice ??
+        (doctor.consultationOptions?.[0]?.price ? Math.round(doctor.consultationOptions[0].price * 0.016) : 80);
+      const firstCadPrice = caEntry?.firstSessionCadPrice ?? 5;
+      const cadPrice = isFirstSession ? firstCadPrice : regularCadPrice;
+
+      // Convert CAD to INR (1 CAD ≈ 62 INR - adjustable)
+      const conversionRate = 62;
+      baseAmount = Math.round(cadPrice * conversionRate);
+
+      displayCurrency = "CAD";
+      displaySymbol = "CAD $";
     }
 
-    // 2. GST Calculation
-    const cgst = baseAmount * 0.09;
-    const sgst = baseAmount * 0.09;
-    const totalAmount = baseAmount + cgst + sgst;
+    // 2. GST Calculation (India only)
+    let gstAmount = 0;
+    let cgst = 0;
+    let sgst = 0;
+    let totalAmount = baseAmount;
 
-    // 3. Razorpay Order (Amount in Paise)
+    if (country === "IN") {
+      cgst = baseAmount * 0.09; // 9%
+      sgst = baseAmount * 0.09; // 9%
+      gstAmount = cgst + sgst;
+      totalAmount = baseAmount + gstAmount;
+    }
+
+    // 3. Razorpay Order (Always INR)
     const order = await razorpayInstance.orders.create({
-      amount: Math.round(totalAmount * 100), // FINAL amount
+      amount: Math.round(totalAmount * 100), // FINAL amount in paise
       currency: "INR",
       receipt: `receipt_${Date.now()}`,
+      notes: {
+        doctorId,
+        employeeId,
+        country,
+        displayCurrency,
+        baseAmount: baseAmount.toFixed(0)
+      },
     });
 
     console.log("✅ Razorpay order created:", order.id);
@@ -98,10 +135,17 @@ router.post("/create-order", async (req, res) => {
     res.status(200).json({
       orderId: order.id,
 
+      // Pricing breakdown
       baseAmount: baseAmount.toFixed(0),
       cgst: cgst.toFixed(0),
       sgst: sgst.toFixed(0),
+      gstAmount: gstAmount.toFixed(0),
       totalAmount: totalAmount.toFixed(0),
+
+      // Display currency (for frontend)
+      displayCurrency,
+      displaySymbol,
+      country,
 
       doctorName: doctor.name,
       duration: doctor.consultationOptions?.[0]?.duration || 30,
@@ -322,7 +366,10 @@ router.post("/verify-and-book", async (req, res) => {
         doctor.consultationOptions?.[0]?.price ||
         500;
 
-      const finalAmount = baseAmount + baseAmount * 0.18;
+      // GST only for India
+      const country = bookingPayload.country || "IN";
+      const gstMultiplier = country === "IN" ? 0.18 : 0;
+      const finalAmount = baseAmount + baseAmount * gstMultiplier;
 
       /* ---------- OVERLAP CHECK ---------- */
       const [pNewStart, pNewEnd] = bookingPayload.slot.split(" - ").map((t) => {
@@ -361,6 +408,7 @@ router.post("/verify-and-book", async (req, res) => {
         slot: bookingPayload.slot,
         mode: bookingPayload.mode,
         amount: Number(finalAmount.toFixed(0)),
+        currency: "INR",
         duration:
           bookingPayload.duration ||
           doctor.consultationOptions?.[0]?.duration ||
@@ -369,6 +417,8 @@ router.post("/verify-and-book", async (req, res) => {
           orderId: razorpay_order_id,
           paymentId: razorpay_payment_id,
           status: "paid",
+          provider: "razorpay",
+          countryCode: country.toLowerCase()
         },
         meetLink: doctor.meetLink,
         confirmationSent: false,

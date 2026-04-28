@@ -18,6 +18,8 @@
   "description": "",
   "dependencies": {
     "@lottiefiles/react-lottie-player": "^3.6.0",
+    "@paypal/checkout-server-sdk": "^1.0.3",
+    "axios": "^1.15.2",
     "bcryptjs": "^3.0.2",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",

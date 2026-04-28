@@ -1,4 +1,5 @@
 import jwt from "jsonwebtoken";
+import Admin from "../models/Admin.js";
 import btocDoctor from "../models/btocDoctor.js";
 
 export default async function adminAuth(req, res, next) {
@@ -8,7 +9,14 @@ export default async function adminAuth(req, res, next) {
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    const admin = await btocDoctor.findById(decoded.id).select("-password");
+    // First try the Admin model (used by adminauthRoutes login)
+    let admin = await Admin.findById(decoded.id).select("-password");
+
+    // Fallback: try btocDoctor model (legacy path)
+    if (!admin) {
+      admin = await btocDoctor.findById(decoded.id).select("-password");
+    }
+
     if (!admin) return res.status(401).json({ success: false, message: "User not found" });
 
     if (admin.role !== "admin") {

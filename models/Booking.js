@@ -56,6 +56,11 @@ const bookingSchema = new mongoose.Schema(
     mode: String,
 
     amount: Number,
+    currency: {
+      type: String,
+      default: "INR",
+      enum: ["INR", "CAD", "AED", "USD"]
+    },
     duration: String,
     isOfferBooking: Boolean,
 
@@ -63,6 +68,16 @@ const bookingSchema = new mongoose.Schema(
       orderId: String,
       paymentId: String,
       status: String,
+      provider: {
+        type: String,
+        default: "razorpay",
+        enum: ["razorpay", "stripe", "paypal"]
+      },
+      countryCode: {
+        type: String,
+        default: "in",
+        enum: ["in", "ca", "ae", "uk"]
+      }
     },
 
     confirmationSent: {
