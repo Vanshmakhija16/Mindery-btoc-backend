@@ -146,10 +146,13 @@ export const loginEmployee = async (req, res) => {
     const { phone, countryCode, password } = req.body;
     if (!phone || !countryCode || !password) return res.status(400).json({ message: "Phone, country code and password are required" });
     const fullPhone = `${countryCode}${phone}`;
-    const member = await OrgMember.findOne({ phone: fullPhone });
-    if (member) return res.status(403).json({ message: "This number is registered with an organization account. Please login via the Organization Portal.", isOrgUser: true });
     const employee = await Employee.findOne({ phone: fullPhone }).populate("companyId", "name slug logo primaryColor accentColor");
-    if (!employee) return res.status(404).json({ message: "Account not found" });
+    // Only redirect to org portal if the number is in OrgMember but NOT in Employee
+    if (!employee) {
+      const member = await OrgMember.findOne({ phone: fullPhone });
+      if (member) return res.status(403).json({ message: "This number is registered with an organization account. Please login via the Organization Portal.", isOrgUser: true });
+      return res.status(404).json({ message: "Account not found" });
+    }
     const valid = await bcrypt.compare(password, employee.password);
     if (!valid) return res.status(401).json({ message: "Invalid password" });
     const company = employee.companyId;
