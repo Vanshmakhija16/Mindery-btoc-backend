@@ -1,12 +1,29 @@
 import express from "express";
 import bcrypt from "bcryptjs";
+import multer from "multer";
+import path from "path";
+import fs from "fs";
 import BtocDoctor from "../models/btocDoctor.js";
 import EmployeeAppointment from "../models/EmployeeAppointment.js";
 import Booking from "../models/Booking.js";
 import adminAuth from "../middlewares/adminAuth.js";
 import CaTherapist from "../models/CaTherapist.js";
+import Company from "../models/Company.js";
 
 const router = express.Router();
+
+// ── Multer for company logo uploads ──────────────────────────────────────────
+const logoStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const dir = "uploads/logos";
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: (req, file, cb) => {
+    cb(null, `logo_${Date.now()}${path.extname(file.originalname)}`);
+  },
+});
+const uploadLogo = multer({ storage: logoStorage, limits: { fileSize: 2 * 1024 * 1024 } });
 
 /* ================= ADMIN DASHBOARD ================= */
 router.get("/dashboard", async (req, res) => {
@@ -50,14 +67,11 @@ router.post("/doctors", async (req, res) => {
   try {
     let displayOrder = 9999;
 
-    // Validate and accept displayOrder from request body
     if (req.body.displayOrder !== undefined && req.body.displayOrder !== null) {
       const val = Number(req.body.displayOrder);
-      // Only accept positive integers
       if (Number.isInteger(val) && val >= 1) {
         displayOrder = val;
       } else {
-        // Invalid value - silently use default 9999
         displayOrder = 9999;
       }
     }
@@ -91,25 +105,20 @@ router.put("/doctors/:doctorId",  async (req, res) => {
     const { doctorId } = req.params;
     const updateData = { ...req.body };
 
-    // 🔐 Handle password safely
     if (updateData.password) {
       updateData.password = await bcrypt.hash(updateData.password, 10);
     } else {
       delete updateData.password;
     }
 
-    // ⭐ PRIORITY LOGIC - Handle displayOrder
     if (updateData.displayOrder !== undefined && updateData.displayOrder !== null && updateData.displayOrder !== "") {
       const val = Number(updateData.displayOrder);
-      // Only accept positive integers or 9999
       if (Number.isInteger(val) && (val >= 1 || val === 9999)) {
         updateData.displayOrder = val;
       } else {
-        // Invalid value - silently use default 9999
         updateData.displayOrder = 9999;
       }
     } else {
-      // If no displayOrder provided, fetch current and keep it
       const currentDoctor = await BtocDoctor.findById(doctorId);
       if (currentDoctor) {
         updateData.displayOrder = currentDoctor.displayOrder;
@@ -146,13 +155,10 @@ router.put("/doctors/:doctorId",  async (req, res) => {
 router.delete("/doctors/:doctorId", async (req, res) => {
   try {
     const { doctorId } = req.params;
-
     const doctor = await BtocDoctor.findByIdAndDelete(doctorId);
-
     if (!doctor) {
       return res.status(404).json({ message: "Doctor not found" });
     }
-
     res.json({ message: "Doctor deleted successfully" });
   } catch (error) {
     res.status(500).json({
@@ -248,11 +254,8 @@ router.get("/doctors/:doctorId/appointments" , async (req, res) => {
 });
 
 
-
-
 // ─── CANADA PORTAL ADMIN ROUTES ──────────────────────────────────────────────
 
-// GET /api/btocAdmin/ca/all-doctors
 router.get("/ca/all-doctors", async (req, res) => {
   try {
     const doctors = await BtocDoctor.find({ isActive: true }).select(
@@ -282,11 +285,9 @@ router.get("/ca/all-doctors", async (req, res) => {
   }
 });
 
-// POST /api/btocAdmin/ca/assign
 router.post("/ca/assign", async (req, res) => {
   try {
     const { doctorId } = req.body;
-    console.log("CA assign called, doctorId:", doctorId);
     if (!doctorId) return res.status(400).json({ success: false, message: "doctorId required" });
 
     const doctor = await BtocDoctor.findById(doctorId);
@@ -304,7 +305,6 @@ router.post("/ca/assign", async (req, res) => {
   }
 });
 
-// DELETE /api/btocAdmin/ca/remove/:doctorId
 router.delete("/ca/remove/:doctorId", async (req, res) => {
   try {
     await CaTherapist.findOneAndUpdate(
@@ -312,6 +312,160 @@ router.delete("/ca/remove/:doctorId", async (req, res) => {
       { isActive: false }
     );
     res.json({ success: true, message: "Doctor removed from CA portal" });
+  } catch (err) {
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
+// ══════════════════════════════════════════════════════════════════
+// COMPANY PORTAL MANAGEMENT (Admin)
+// ══════════════════════════════════════════════════════════════════
+
+// GET all companies
+router.get("/companies", async (req, res) => {
+  try {
+    const companies = await Company.find().sort({ createdAt: -1 })
+      .populate("doctors", "name profilePhoto specialization");
+    res.json({ success: true, data: companies });
+  } catch (err) {
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
+// GET single company
+router.get("/companies/:id", async (req, res) => {
+  try {
+    const company = await Company.findById(req.params.id)
+      .populate("doctors", "name profilePhoto specialization")
+      .populate("assignedAssessments.assessmentId", "title");
+    if (!company) return res.status(404).json({ success: false, message: "Company not found" });
+    res.json({ success: true, data: company });
+  } catch (err) {
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
+// POST create company
+router.post("/companies", uploadLogo.single("logo"), async (req, res) => {
+  try {
+    const {
+      name, slug, tagline, website,
+      primaryColor, accentColor,
+      hrContactEmail, contractExpiry, sessionQuota,
+      referralCodes, domainPatterns,
+    } = req.body;
+
+    if (!name || !slug) return res.status(400).json({ success: false, message: "Name and slug are required" });
+
+    const existing = await Company.findOne({ slug: slug.toLowerCase() });
+    if (existing) return res.status(409).json({ success: false, message: "Slug already taken" });
+
+    const logo = req.file ? `/${req.file.path.replace(/\\/g, "/")}` : (req.body.logoUrl || "");
+
+    const codes = Array.isArray(referralCodes)
+      ? referralCodes.map(c => c.trim().toUpperCase()).filter(Boolean)
+      : typeof referralCodes === "string"
+        ? referralCodes.split(",").map(c => c.trim().toUpperCase()).filter(Boolean)
+        : [];
+
+    const domains = Array.isArray(domainPatterns)
+      ? domainPatterns.map(d => d.trim().toLowerCase()).filter(Boolean)
+      : typeof domainPatterns === "string"
+        ? domainPatterns.split(",").map(d => d.trim().toLowerCase()).filter(Boolean)
+        : [];
+
+    // sessionQuota: null = unlimited (tenant companies default to unlimited)
+    const quota = sessionQuota !== undefined && sessionQuota !== "" && sessionQuota !== null
+      ? Number(sessionQuota)
+      : null;
+
+    const company = await Company.create({
+      name, slug: slug.toLowerCase(), logo, tagline, website,
+      primaryColor: primaryColor || "#DE6875",
+      accentColor:  accentColor  || "#10191F",
+      hrContactEmail, contractExpiry: contractExpiry || null,
+      sessionQuota: quota,
+      referralCodes: codes,
+      domainPatterns: domains,
+    });
+
+    res.status(201).json({ success: true, data: company });
+  } catch (err) {
+    console.error("Create company error:", err);
+    res.status(500).json({ success: false, message: err.message || "Server error" });
+  }
+});
+
+// PATCH update company
+router.patch("/companies/:id", uploadLogo.single("logo"), async (req, res) => {
+  try {
+    const company = await Company.findById(req.params.id);
+    if (!company) return res.status(404).json({ success: false, message: "Company not found" });
+
+    const fields = ["name","slug","tagline","website","primaryColor","accentColor","hrContactEmail","contractExpiry"];
+    fields.forEach(f => { if (req.body[f] !== undefined) company[f] = req.body[f]; });
+
+    // Handle sessionQuota separately: blank/empty → null (unlimited)
+    if (req.body.sessionQuota !== undefined) {
+      const sq = req.body.sessionQuota;
+      company.sessionQuota = (sq !== "" && sq !== null && sq !== "null") ? Number(sq) : null;
+    }
+
+    if (req.file) company.logo = `/${req.file.path.replace(/\\/g, "/")}`;
+    else if (req.body.logoUrl !== undefined) company.logo = req.body.logoUrl;
+
+    if (req.body.referralCodes !== undefined) {
+      const codes = Array.isArray(req.body.referralCodes)
+        ? req.body.referralCodes
+        : req.body.referralCodes.split(",");
+      company.referralCodes = codes.map(c => c.trim().toUpperCase()).filter(Boolean);
+    }
+
+    if (req.body.domainPatterns !== undefined) {
+      const domains = Array.isArray(req.body.domainPatterns)
+        ? req.body.domainPatterns
+        : req.body.domainPatterns.split(",");
+      company.domainPatterns = domains.map(d => d.trim().toLowerCase()).filter(Boolean);
+    }
+
+    await company.save();
+    res.json({ success: true, data: company });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message || "Server error" });
+  }
+});
+
+// DELETE company
+router.delete("/companies/:id", async (req, res) => {
+  try {
+    await Company.findByIdAndDelete(req.params.id);
+    res.json({ success: true, message: "Company deleted" });
+  } catch (err) {
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
+// POST assign doctors to company
+router.post("/companies/:id/assign-doctors", async (req, res) => {
+  try {
+    const { doctorIds } = req.body;
+    const company = await Company.findByIdAndUpdate(
+      req.params.id,
+      { $addToSet: { doctors: { $each: doctorIds } } },
+      { new: true }
+    ).populate("doctors", "name profilePhoto specialization");
+    if (!company) return res.status(404).json({ success: false, message: "Company not found" });
+    res.json({ success: true, data: company });
+  } catch (err) {
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
+// DELETE remove doctor from company
+router.delete("/companies/:id/doctors/:doctorId", async (req, res) => {
+  try {
+    await Company.findByIdAndUpdate(req.params.id, { $pull: { doctors: req.params.doctorId } });
+    res.json({ success: true, message: "Doctor removed from company" });
   } catch (err) {
     res.status(500).json({ success: false, message: "Server error" });
   }

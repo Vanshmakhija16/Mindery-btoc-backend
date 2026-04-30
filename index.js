@@ -23,20 +23,20 @@ import employeeAuthRoutes from "./routes/employeeAuthRoutes.js";
 import bookingRoute from "./routes/bookingRoute.js";
 import ArticleRoutes from "./routes/ArticleRoute.js";
 import offerRoutes from "./routes/offerchecking.js";
-import paymentRoutes from "./routes/payment.js"
+import paymentRoutes from "./routes/payment.js";
 import btocAdminRoutes from "./routes/btocAdminRoutes.js";
 import jobRoutes from "./routes/jobRoutes.js";
 import clinicalReportRoutes from "./routes/clinicalReport.routes.js";
 import { oAuth2Client } from "./googlemeet.js";
-import {generateGoogleMeetLink} from "./googlemeet.js"
+import { generateGoogleMeetLink } from "./googlemeet.js";
 import GoogleToken from "./models/GoogleToken.js";
 import path from "path";
 import { fileURLToPath } from "url";
 import adminAuthRoutes from "./routes/adminauthRoutes.js";
-import contactRoutes from "./routes/contact.js"
+import contactRoutes from "./routes/contact.js";
 import therapyRequestRoutes from "./routes/therapyRequestRoutes.js";
 import orgMemberRoutes from "./routes/orgMemberRoutes.js";
-import orgAuthRoutes  from "./routes/orgAuthRoutes.js";
+import orgAuthRoutes from "./routes/orgAuthRoutes.js";
 import orgBookingRoute from "./routes/orgBookingRoute.js";
 import orgMemberProfileRoutes from "./routes/orgMemberProfile.routes.js";
 import orgAssessmentRoutes from "./routes/orgAssessmentRoutes.js";
@@ -46,10 +46,7 @@ import feedbackRoutes from "./routes/feedbackRoutes.js";
 import courseRoutes from "./routes/courseRoutes.js";
 import coursePaymentRoutes from "./routes/coursePaymentRoutes.js";
 import caRoutes from "./routes/caRoutes.js";
-
-console.log("caRoutes imported successfully");
-
-console.log("MONGO_URI:", process.env.MONGO_URI);
+import companyPortalRoutes from "./routes/companyPortalRoutes.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -61,15 +58,9 @@ app.use(express.urlencoded({ limit: "20mb", extended: true }));
 const allowedOrigins = [
   "https://mytherapy.minderytech.com",
   "https://www.mytherapy.minderytech.com",
-
-  // Canada domain (final)
   "https://mindery.ca",
   "https://www.mindery.ca",
-
-  // ✅ ADD THIS (temporary Azure URL)
   "https://jolly-grass-04ca3ff1e.7.azurestaticapps.net",
-  
-
   "http://localhost:5173",
   "http://localhost:3000",
   ...(process.env.CLIENT_URL ? [process.env.CLIENT_URL] : []),
@@ -135,6 +126,7 @@ app.use("/api/articles", ArticleRoutes);
 app.use("/api/offer", offerRoutes);
 app.use("/api/payment", paymentRoutes);
 app.use("/api/btocAdmin", btocAdminRoutes);
+app.use("/api/btoc-admin", btocAdminRoutes);   // ✅ hyphenated alias — frontend calls this
 app.use("/api/jobs", jobRoutes);
 app.use("/api/clinical-reports", clinicalReportRoutes);
 app.use("/api/admin-auth", adminAuthRoutes);
@@ -150,9 +142,8 @@ app.use("/api/monitor", monitorRoutes);
 app.use("/api/feedback", feedbackRoutes);
 app.use("/api/courses", courseRoutes);
 app.use("/api/course-payment", coursePaymentRoutes);
-app.use("/api/ca", caRoutes);   // ✅ Canada portal routes
-
-console.log("caRoutes mounted at /api/ca");
+app.use("/api/ca", caRoutes);
+app.use("/api/company-portal/:slug", companyPortalRoutes);  // ✅ Multi-tenant company portals
 
 // --------------------
 // Google OAuth / Meet

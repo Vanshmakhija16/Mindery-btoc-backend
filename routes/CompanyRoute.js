@@ -8,63 +8,24 @@ import EmployeeAppointment from "../models/EmployeeAppointment.js";
 import Employee from "../models/Employee.js";
 import nodemailer from "nodemailer";
 import Assessment from "../models/Assessment.js";
+import axios from "axios";
 
 const router = express.Router();
 
-// ─── EMAIL TRANSPORTER ───────────────────────────────────────
+// ─── EMAIL TRANSPORTER ───────────────────────────────────────────
 const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: parseInt(process.env.SMTP_PORT, 10),
+  host:   process.env.SMTP_HOST,
+  port:   parseInt(process.env.SMTP_PORT, 10),
   secure: process.env.SMTP_SECURE === "true",
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
+  auth:   { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
 });
 
-const sendEmployeeAppointmentEmail = async (appointment) => {
-  try {
-    const employee = await Employee.findById(appointment.employee);
-    const doctor = await Doctor.findById(appointment.doctor);
-    if (!employee || !doctor) return;
-
-    const date = new Date(appointment.slotStart).toLocaleDateString();
-    const startTime = new Date(appointment.slotStart).toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-    const endTime = new Date(appointment.slotEnd).toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-
-    const subject = "✅ Your session is confirmed";
-
-    await transporter.sendMail({
-      from: process.env.SMTP_FROM,
-      to: employee.email,
-      subject,
-      text: `Hi ${employee.name},\n\nYour session with Dr. ${doctor.name} has been booked.\n\nDate: ${date}\nTime: ${startTime} - ${endTime}\nMode: ${appointment.mode || "N/A"}\n\nThank you!`,
-    });
-
-    await transporter.sendMail({
-      from: process.env.SMTP_FROM,
-      to: doctor.email,
-      subject,
-      text: `Hi Dr. ${doctor.name},\n\nA new session has been booked by ${employee.name}.\n\nDate: ${date}\nTime: ${startTime} - ${endTime}\nMode: ${appointment.mode || "N/A"}\n\nPlease be prepared.`,
-    });
-  } catch (err) {
-    console.error("Failed to send email:", err);
-  }
-};
-
-// ─── AUTH MIDDLEWARE ─────────────────────────────────────────
+// ─── AUTH MIDDLEWARE ──────────────────────────────────────────────
 const authMiddleware = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    if (!authHeader?.startsWith("Bearer "))
       return res.status(401).json({ error: "No token provided" });
-    }
     const token = authHeader.split(" ")[1];
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     const user = await User.findById(decoded.id).select("id email role");
@@ -72,317 +33,52 @@ const authMiddleware = async (req, res, next) => {
     req.user = user;
     next();
   } catch (err) {
-    console.error("Auth Middleware Error:", err.message);
     res.status(403).json({ error: "Invalid or expired token" });
   }
 };
 
 const requireRole = (role) => (req, res, next) => {
-  if (!req.user || req.user.role !== role) {
+  if (!req.user || req.user.role !== role)
     return res.status(403).json({ error: "Access denied" });
-  }
   next();
 };
 
-// ─── ROUTES ──────────────────────────────────────────────────
-
-// ✅ Add a new company (UPDATED — now accepts sessionQuota, contractExpiry, hrContactEmail)
-router.post("/add", async (req, res) => {
+// ─── PUBLIC: Get company by slug ─────────────────────────────────
+// Used by TenantPortal to load branding, doctors, etc.
+router.get("/slug/:slug", async (req, res) => {
   try {
-const { name, logo, domainPatterns, sessionQuota, contractExpiry, hrContactEmail } = req.body;
-    if (!name || !domainPatterns || !Array.isArray(domainPatterns) || domainPatterns.length === 0) {
-      return res.status(400).json({ error: "Please provide company name and at least one domain pattern" });
-    }
-
-    const existingCompany = await Company.findOne({ domainPatterns: { $in: domainPatterns } });
-    if (existingCompany) {
-      return res.status(400).json({ error: "A company with one of these domains already exists" });
-    }
-
-    const company = new Company({
-      name,
-      logo: logo || "",
-      domainPatterns,
-      sessionQuota: sessionQuota || 50,
-      contractExpiry: contractExpiry || null,
-      hrContactEmail: hrContactEmail || "",
-    });
-
-    await company.save();
-
-    res.status(201).json({ message: "Company added successfully", company });
-  } catch (error) {
-    console.error("Error adding company:", error);
-    res.status(500).json({ error: "Internal Server Error" });
-  }
-});
-
-// ✅ Get all companies
-router.get("/", async (req, res) => {
-  try {
-    const companies = await Company.find().sort({ createdAt: -1 });
-    res.status(200).json(companies);
-  } catch (error) {
-    console.error("Error fetching companies:", error);
-    res.status(500).json({ error: "Internal Server Error" });
-  }
-});
-
-// ✅ Get all doctors (for BookEmployeeSession)
-router.get("/assigned-doctors", async (req, res) => {
-  try {
-    const doctors = await Doctor.find({}, "name email specialization imageUrl").sort({
-      displayOrder: 1,
-      createdAt: -1,
-    });
-    res.status(200).json({ data: doctors });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: "Failed to fetch doctors" });
-  }
-});
-
-// ✅ Get all doctors (admin)
-router.get("/doctors/all", async (req, res) => {
-  try {
-    const doctors = await Doctor.find()
-      .select("name specialization imageUrl experience expertise languages charges consultationOptions")
-      .sort({ displayOrder: 1, createdAt: -1 });
-    res.status(200).json({ data: doctors });
-  } catch (err) {
-    res.status(500).json({ error: "Failed to fetch all doctors" });
-  }
-});
-
-// ✅ Get all companies helper (admin)
-router.get("/all", authMiddleware, requireRole("admin"), async (req, res) => {
-  try {
-    const companies = await Company.find().select("name email doctors");
-    res.status(200).json({ data: companies });
-  } catch (err) {
-    console.error("Failed to fetch companies:", err);
-    res.status(500).json({ error: "Failed to fetch companies" });
-  }
-});
-
-// ✅ Update company details (name, quota, expiry, hrEmail)
-router.put("/:id", async (req, res) => {
-  try {
-    const { name, logo, domainPatterns, sessionQuota, contractExpiry, hrContactEmail } = req.body;
-
-    const company = await Company.findById(req.params.id);
+    const company = await Company.findOne({ slug: req.params.slug.toLowerCase() }).lean();
     if (!company) return res.status(404).json({ error: "Company not found" });
 
-    if (name) company.name = name;
-    if (logo !== undefined) company.logo = logo;
-    if (domainPatterns) company.domainPatterns = domainPatterns;
-    if (sessionQuota !== undefined) company.sessionQuota = sessionQuota;
-    if (contractExpiry !== undefined) company.contractExpiry = contractExpiry;
-    if (hrContactEmail !== undefined) company.hrContactEmail = hrContactEmail;
+    // Check contract validity
+    if (company.contractExpiry && new Date(company.contractExpiry) < new Date())
+      return res.status(403).json({ error: "This portal has expired. Please contact your admin." });
 
-    await company.save();
-
-    res.status(200).json({ message: "Company updated successfully", company });
-  } catch (error) {
-    console.error("Error updating company:", error);
-    res.status(500).json({ error: "Internal Server Error" });
-  }
-});
-
-
-
-// ✅ Delete a company
-router.delete("/:id", async (req, res) => {
-  try {
-    const company = await Company.findByIdAndDelete(req.params.id);
-    if (!company) return res.status(404).json({ message: "Company not found" });
-    res.status(200).json({ message: "Company deleted successfully" });
-  } catch (error) {
-    console.error("Error deleting company:", error);
-    res.status(500).json({ message: "Server error while deleting company" });
-  }
-});
-
-// ✅ Get all bookings for a specific company (NEW)
-router.get("/:companyId/bookings", async (req, res) => {
-  try {
-    const { companyId } = req.params;
-
-    const company = await Company.findById(companyId);
-    if (!company) return res.status(404).json({ error: "Company not found" });
-
-    const bookings = await Booking.find({ companyId })
-      .populate("employeeId", "name email phone")
-      .populate("doctorId", "name email")
-      .sort({ createdAt: -1 })
-      .lean();
-
-    res.status(200).json({
-      success: true,
-      company: {
-        name: company.name,
-        sessionQuota: company.sessionQuota,
-        sessionsUsed: company.sessionsUsed,
-        contractExpiry: company.contractExpiry,
-      },
-      count: bookings.length,
-      bookings,
-    });
-  } catch (error) {
-    console.error("Error fetching company bookings:", error);
-    res.status(500).json({ error: "Failed to fetch company bookings" });
-  }
-});
-
-router.patch("/:companyId/assign-doctors", async (req, res) => {
-  try {
-    const { companyId } = req.params;
-    const { doctorIds } = req.body;
-
-    if (!Array.isArray(doctorIds)) {
-      return res.status(400).json({ message: "doctorIds must be an array." });
-    }
-
-    const company = await Company.findByIdAndUpdate(
-      companyId,
-      { $set: { doctors: doctorIds } },
-      { new: true }
-    ).populate("doctors");
-
-    if (!company) {
-      return res.status(404).json({ message: "Company not found." });
-    }
-
-    return res.status(200).json({
-      message: "Doctors assigned successfully.",
-      company,
-    });
-  } catch (err) {
-    console.error("Assign doctors error:", err);
-    return res.status(500).json({ message: "Failed to assign doctors." });
-  }
-});
-
-router.get("/:id", async (req, res) => {
-  try {
-    const company = await Company.findById(req.params.id).lean();
-    if (!company) return res.status(404).json({ error: "Not found" });
-    // Ensure logo field always exists in response (handles companies created before logo field was added)
     res.json({ ...company, logo: company.logo || "" });
   } catch {
     res.status(500).json({ error: "Server error" });
   }
 });
 
-// ✅ Get doctors assigned to a specific company
-router.get("/:companyId/doctors", async (req, res) => {
+// ─── PUBLIC: Get doctors for a company (by slug) ─────────────────
+router.get("/slug/:slug/doctors", async (req, res) => {
   try {
-    const company = await Company.findById(req.params.companyId)
+    const company = await Company.findOne({ slug: req.params.slug.toLowerCase() })
       .populate(
         "doctors",
-        "name specialization profession profilePhoto experience expertise languages charges consultationOptions availabilityType dateAvailability isAvailable displayOrder"
-        // ✅ Added: profession, displayOrder
+        "name specialization profession profilePhoto imageUrl experience expertise languages charges consultationOptions availabilityType dateAvailability weeklyAvailability isAvailable displayOrder"
       );
-
-    if (!company) return res.status(404).json({ message: "Company not found." });
-
-    return res.status(200).json({ doctors: company.doctors });
-  } catch (err) {
-    console.error("Get company doctors error:", err);
-    return res.status(500).json({ message: "Failed to fetch doctors." });
-  }
-});
-// ✅ Assign a doctor to a company
-router.post("/:companyId/doctors", authMiddleware, requireRole("admin"), async (req, res) => {
-  try {
-    const { doctorId } = req.body;
-    if (!doctorId) return res.status(400).json({ error: "Doctor ID is required" });
-
-    const company = await Company.findById(req.params.companyId);
     if (!company) return res.status(404).json({ error: "Company not found" });
-
-    if (company.doctors.includes(doctorId)) {
-      return res.status(400).json({ error: "Doctor already assigned to this company" });
-    }
-
-    company.doctors.push(doctorId);
-    await company.save();
-
-    res.status(200).json({ message: "Doctor assigned successfully" });
-  } catch (err) {
-    console.error("Failed to assign doctor:", err);
-    res.status(500).json({ error: "Failed to assign doctor" });
+    res.json({ doctors: company.doctors || [] });
+  } catch {
+    res.status(500).json({ error: "Server error" });
   }
 });
 
-// ✅ Unassign a doctor from a company
-router.delete("/:companyId/doctors/:doctorId", authMiddleware, requireRole("admin"), async (req, res) => {
+// ─── PUBLIC: Get assessments for a company (by slug) ─────────────
+router.get("/slug/:slug/assessments", async (req, res) => {
   try {
-    const { companyId, doctorId } = req.params;
-
-    const company = await Company.findById(companyId);
-    if (!company) return res.status(404).json({ error: "Company not found" });
-
-    company.doctors = company.doctors.filter((d) => d.toString() !== doctorId);
-    await company.save();
-
-    res.status(200).json({ message: "Doctor unassigned successfully" });
-  } catch (err) {
-    console.error("Failed to unassign doctor:", err);
-    res.status(500).json({ error: "Failed to unassign doctor" });
-  }
-});
-
-
-
-// ✅ Create employee appointment (existing — unchanged)
-router.post("/", async (req, res) => {
-  try {
-    const { employeeId, doctorId, slotStart, slotEnd, notes, mode } = req.body;
-
-    if (!employeeId || !doctorId || !slotStart || !slotEnd) {
-      return res.status(400).json({ error: "Missing required fields" });
-    }
-
-    const overlappingSession = await EmployeeAppointment.findOne({
-      doctor: doctorId,
-      $or: [{ slotStart: { $lt: slotEnd }, slotEnd: { $gt: slotStart } }],
-    });
-
-    if (overlappingSession) {
-      return res.status(400).json({
-        error: "This time slot is already booked for the selected doctor.",
-      });
-    }
-
-    const newAppointment = new EmployeeAppointment({
-      employee: employeeId,
-      doctor: doctorId,
-      slotStart,
-      slotEnd,
-      notes,
-      mode,
-    });
-
-    await newAppointment.save();
-    await sendEmployeeAppointmentEmail(newAppointment);
-
-    res.status(201).json({
-      message: "Employee session booked successfully!",
-      appointment: newAppointment,
-    });
-  } catch (err) {
-    console.error("Booking failed:", err);
-    res.status(500).json({ error: "Failed to create appointment" });
-  }
-});
-
-
-
-// ✅ GET assessments for a company (global free + company unlocked paid)
-router.get("/:companyId/assessments", async (req, res) => {
-  try {
-    const company = await Company.findById(req.params.companyId).lean();
+    const company = await Company.findOne({ slug: req.params.slug.toLowerCase() }).lean();
     if (!company) return res.status(404).json({ error: "Company not found" });
 
     const unlockedIds = (company.assignedAssessments || [])
@@ -390,63 +86,294 @@ router.get("/:companyId/assessments", async (req, res) => {
       .map((a) => a.assessmentId.toString());
 
     const all = await Assessment.find({ isActive: { $ne: false } }).lean();
-
     const result = all.map((a) => ({
       ...a,
       isLocked: a.isPaid === true && !unlockedIds.includes(a._id.toString()),
     }));
 
     res.json({ assessments: result });
-  } catch (err) {
-    console.error("Get company assessments error:", err);
+  } catch {
     res.status(500).json({ error: "Server error" });
   }
 });
 
-// ✅ PATCH assign assessments to company (admin)
-router.patch("/:companyId/assign-assessments", async (req, res) => {
+// ─── NEW: WordPress booking webhook ──────────────────────────────
+// POST /api/companies/slug/:slug/book
+// Called when a referral-mapped user books a session (₹0 flow)
+router.post("/slug/:slug/book", async (req, res) => {
   try {
-    const { assessmentIds } = req.body;
-    if (!Array.isArray(assessmentIds))
-      return res.status(400).json({ message: "assessmentIds must be an array" });
+    const company = await Company.findOne({ slug: req.params.slug.toLowerCase() });
+    if (!company) return res.status(404).json({ error: "Company not found" });
 
-    const company = await Company.findById(req.params.companyId);
-    if (!company) return res.status(404).json({ message: "Company not found" });
+    const { employeeId, doctorId, doctorName, date, slot, mode, employeeName, employeeEmail, employeePhone } = req.body;
 
-    company.assignedAssessments = assessmentIds.map((id) => ({
-      assessmentId: id,
-      isUnlocked: true,
-      assignedAt: new Date(),
-    }));
+    // 1. Save booking to DB with ₹0 price
+    const booking = await Booking.create({
+      employeeId,
+      doctorId,
+      companyId: company._id,
+      date,
+      slot,
+      mode:   mode || "online",
+      name:   employeeName,
+      phone:  employeePhone,
+      email:  employeeEmail,
+      price:  0,
+      currency: "INR",
+      status: "confirmed",
+    });
 
-    await company.save();
-    res.json({ success: true, message: "Assessments assigned", company });
+    // 2. Forward to WordPress webhook (if configured)
+    if (company.wordpressWebhookUrl) {
+      try {
+        await axios.post(company.wordpressWebhookUrl, {
+          company:  company.name,
+          slug:     company.slug,
+          employee: { name: employeeName, email: employeeEmail, phone: employeePhone },
+          doctor:   { id: doctorId, name: doctorName },
+          date,
+          slot,
+          mode,
+          price:    0,
+          bookingId: booking._id,
+        }, { timeout: 8000 });
+      } catch (wpErr) {
+        console.error("WordPress webhook failed:", wpErr.message);
+        // Don't fail the booking — just log
+      }
+    }
+
+    // 3. Increment sessions used
+    await Company.findByIdAndUpdate(company._id, { $inc: { sessionsUsed: 1 } });
+
+    res.json({ success: true, bookingId: booking._id, message: "Session booked at ₹0" });
   } catch (err) {
-    console.error("Assign assessments error:", err);
-    res.status(500).json({ message: "Failed to assign assessments" });
+    console.error("Tenant booking error:", err);
+    res.status(500).json({ error: "Booking failed" });
   }
 });
 
-// ✅ GET all assessments with lock status for a company (used by admin)
+// ─── ADMIN: Add a new company ─────────────────────────────────────
+router.post("/add", async (req, res) => {
+  try {
+    const {
+      name, logo, domainPatterns, sessionQuota, contractExpiry, hrContactEmail,
+      slug, referralCodes, primaryColor, accentColor, tagline, website, wordpressWebhookUrl,
+    } = req.body;
+
+    if (!name || !Array.isArray(domainPatterns))
+      return res.status(400).json({ error: "Company name is required" });
+
+    if (slug) {
+      const existing = await Company.findOne({ slug: slug.toLowerCase() });
+      if (existing) return res.status(400).json({ error: "Slug already in use" });
+    }
+
+    const company = new Company({
+      name, logo: logo || "", domainPatterns,
+      sessionQuota: sessionQuota || 50,
+      contractExpiry: contractExpiry || null,
+      hrContactEmail: hrContactEmail || "",
+      slug:               slug ? slug.toLowerCase() : undefined,
+      referralCodes:      Array.isArray(referralCodes) ? referralCodes.map(c => c.toUpperCase()) : [],
+      primaryColor:       primaryColor || "#DE6875",
+      accentColor:        accentColor  || "#10191F",
+      tagline:            tagline      || "",
+      website:            website      || "",
+      wordpressWebhookUrl: wordpressWebhookUrl || "",
+    });
+
+    await company.save();
+    res.status(201).json({ message: "Company added successfully", company });
+  } catch (err) {
+    console.error("Error adding company:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+// ─── Get all companies ────────────────────────────────────────────
+router.get("/", async (req, res) => {
+  try {
+    const companies = await Company.find().sort({ createdAt: -1 });
+    res.status(200).json(companies);
+  } catch { res.status(500).json({ error: "Internal Server Error" }); }
+});
+
+// ─── Get all doctors (for BookEmployeeSession) ────────────────────
+router.get("/assigned-doctors", async (req, res) => {
+  try {
+    const doctors = await Doctor.find({}, "name email specialization imageUrl").sort({ displayOrder: 1, createdAt: -1 });
+    res.status(200).json({ data: doctors });
+  } catch { res.status(500).json({ error: "Failed to fetch doctors" }); }
+});
+
+router.get("/doctors/all", async (req, res) => {
+  try {
+    const doctors = await Doctor.find()
+      .select("name specialization imageUrl experience expertise languages charges consultationOptions")
+      .sort({ displayOrder: 1, createdAt: -1 });
+    res.status(200).json({ data: doctors });
+  } catch { res.status(500).json({ error: "Failed to fetch all doctors" }); }
+});
+
+router.get("/all", authMiddleware, requireRole("admin"), async (req, res) => {
+  try {
+    const companies = await Company.find().select("name email doctors slug referralCodes");
+    res.status(200).json({ data: companies });
+  } catch { res.status(500).json({ error: "Failed to fetch companies" }); }
+});
+
+// ─── Update company ───────────────────────────────────────────────
+router.put("/:id", async (req, res) => {
+  try {
+    const {
+      name, logo, domainPatterns, sessionQuota, contractExpiry, hrContactEmail,
+      slug, referralCodes, primaryColor, accentColor, tagline, website, wordpressWebhookUrl,
+    } = req.body;
+
+    const company = await Company.findById(req.params.id);
+    if (!company) return res.status(404).json({ error: "Company not found" });
+
+    if (name)                  company.name            = name;
+    if (logo !== undefined)    company.logo            = logo;
+    if (domainPatterns)        company.domainPatterns  = domainPatterns;
+    if (sessionQuota !== undefined) company.sessionQuota = sessionQuota;
+    if (contractExpiry !== undefined) company.contractExpiry = contractExpiry;
+    if (hrContactEmail !== undefined) company.hrContactEmail = hrContactEmail;
+    if (slug !== undefined)    company.slug            = slug ? slug.toLowerCase() : company.slug;
+    if (referralCodes !== undefined) company.referralCodes = Array.isArray(referralCodes) ? referralCodes.map(c => c.toUpperCase()) : [];
+    if (primaryColor !== undefined) company.primaryColor  = primaryColor;
+    if (accentColor  !== undefined) company.accentColor   = accentColor;
+    if (tagline      !== undefined) company.tagline        = tagline;
+    if (website      !== undefined) company.website        = website;
+    if (wordpressWebhookUrl !== undefined) company.wordpressWebhookUrl = wordpressWebhookUrl;
+
+    await company.save();
+    res.status(200).json({ message: "Company updated successfully", company });
+  } catch (err) {
+    console.error("Error updating company:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+// ─── Delete a company ─────────────────────────────────────────────
+router.delete("/:id", async (req, res) => {
+  try {
+    const company = await Company.findByIdAndDelete(req.params.id);
+    if (!company) return res.status(404).json({ message: "Company not found" });
+    res.status(200).json({ message: "Company deleted successfully" });
+  } catch { res.status(500).json({ message: "Server error while deleting company" }); }
+});
+
+// ─── Get company bookings ─────────────────────────────────────────
+router.get("/:companyId/bookings", async (req, res) => {
+  try {
+    const company = await Company.findById(req.params.companyId);
+    if (!company) return res.status(404).json({ error: "Company not found" });
+
+    const bookings = await Booking.find({ companyId: req.params.companyId })
+      .populate("employeeId", "name email phone")
+      .populate("doctorId",   "name email")
+      .sort({ createdAt: -1 })
+      .lean();
+
+    res.status(200).json({
+      success: true,
+      company: { name: company.name, sessionQuota: company.sessionQuota, sessionsUsed: company.sessionsUsed, contractExpiry: company.contractExpiry },
+      count: bookings.length,
+      bookings,
+    });
+  } catch { res.status(500).json({ error: "Failed to fetch company bookings" }); }
+});
+
+// ─── Assign doctors to company ────────────────────────────────────
+router.patch("/:companyId/assign-doctors", async (req, res) => {
+  try {
+    const { doctorIds } = req.body;
+    if (!Array.isArray(doctorIds)) return res.status(400).json({ message: "doctorIds must be an array." });
+    const company = await Company.findByIdAndUpdate(req.params.companyId, { $set: { doctors: doctorIds } }, { new: true }).populate("doctors");
+    if (!company) return res.status(404).json({ message: "Company not found." });
+    return res.status(200).json({ message: "Doctors assigned successfully.", company });
+  } catch { return res.status(500).json({ message: "Failed to assign doctors." }); }
+});
+
+// ─── Get company by ID ────────────────────────────────────────────
+router.get("/:id", async (req, res) => {
+  try {
+    const company = await Company.findById(req.params.id).lean();
+    if (!company) return res.status(404).json({ error: "Not found" });
+    res.json({ ...company, logo: company.logo || "" });
+  } catch { res.status(500).json({ error: "Server error" }); }
+});
+
+// ─── Get doctors assigned to company ─────────────────────────────
+router.get("/:companyId/doctors", async (req, res) => {
+  try {
+    const company = await Company.findById(req.params.companyId)
+      .populate("doctors", "name specialization profession profilePhoto experience expertise languages charges consultationOptions availabilityType dateAvailability isAvailable displayOrder");
+    if (!company) return res.status(404).json({ message: "Company not found." });
+    return res.status(200).json({ doctors: company.doctors });
+  } catch { return res.status(500).json({ message: "Failed to fetch doctors." }); }
+});
+
+// ─── Assign a doctor to a company ────────────────────────────────
+router.post("/:companyId/doctors", authMiddleware, requireRole("admin"), async (req, res) => {
+  try {
+    const { doctorId } = req.body;
+    if (!doctorId) return res.status(400).json({ error: "Doctor ID is required" });
+    const company = await Company.findById(req.params.companyId);
+    if (!company) return res.status(404).json({ error: "Company not found" });
+    if (company.doctors.includes(doctorId)) return res.status(400).json({ error: "Doctor already assigned" });
+    company.doctors.push(doctorId);
+    await company.save();
+    res.status(200).json({ message: "Doctor assigned successfully" });
+  } catch { res.status(500).json({ error: "Failed to assign doctor" }); }
+});
+
+// ─── Unassign a doctor ────────────────────────────────────────────
+router.delete("/:companyId/doctors/:doctorId", authMiddleware, requireRole("admin"), async (req, res) => {
+  try {
+    const company = await Company.findById(req.params.companyId);
+    if (!company) return res.status(404).json({ error: "Company not found" });
+    company.doctors = company.doctors.filter((d) => d.toString() !== req.params.doctorId);
+    await company.save();
+    res.status(200).json({ message: "Doctor unassigned successfully" });
+  } catch { res.status(500).json({ error: "Failed to unassign doctor" }); }
+});
+
+// ─── Company assessments ──────────────────────────────────────────
+router.get("/:companyId/assessments", async (req, res) => {
+  try {
+    const company = await Company.findById(req.params.companyId).lean();
+    if (!company) return res.status(404).json({ error: "Company not found" });
+    const unlockedIds = (company.assignedAssessments || []).filter((a) => a.isUnlocked).map((a) => a.assessmentId.toString());
+    const all = await Assessment.find({ isActive: { $ne: false } }).lean();
+    const result = all.map((a) => ({ ...a, isLocked: a.isPaid === true && !unlockedIds.includes(a._id.toString()) }));
+    res.json({ assessments: result });
+  } catch { res.status(500).json({ error: "Server error" }); }
+});
+
+router.patch("/:companyId/assign-assessments", async (req, res) => {
+  try {
+    const { assessmentIds } = req.body;
+    if (!Array.isArray(assessmentIds)) return res.status(400).json({ message: "assessmentIds must be an array" });
+    const company = await Company.findById(req.params.companyId);
+    if (!company) return res.status(404).json({ message: "Company not found" });
+    company.assignedAssessments = assessmentIds.map((id) => ({ assessmentId: id, isUnlocked: true, assignedAt: new Date() }));
+    await company.save();
+    res.json({ success: true, message: "Assessments assigned", company });
+  } catch { res.status(500).json({ message: "Failed to assign assessments" }); }
+});
+
 router.get("/:companyId/assessments-admin", async (req, res) => {
   try {
     const company = await Company.findById(req.params.companyId).lean();
     if (!company) return res.status(404).json({ error: "Company not found" });
-
-    const unlockedIds = (company.assignedAssessments || [])
-      .filter((a) => a.isUnlocked)
-      .map((a) => a.assessmentId.toString());
-
+    const unlockedIds = (company.assignedAssessments || []).filter((a) => a.isUnlocked).map((a) => a.assessmentId.toString());
     const all = await Assessment.find({ isActive: { $ne: false } }).lean();
-    const result = all.map((a) => ({
-      ...a,
-      isAssigned: unlockedIds.includes(a._id.toString()),
-    }));
-
+    const result = all.map((a) => ({ ...a, isAssigned: unlockedIds.includes(a._id.toString()) }));
     res.json({ assessments: result });
-  } catch (err) {
-    res.status(500).json({ error: "Server error" });
-  }
+  } catch { res.status(500).json({ error: "Server error" }); }
 });
 
 export default router;
