@@ -17,6 +17,16 @@ const detectCompanyByDomain = async (email) => {
   } catch { return null; }
 };
 
+
+// const detectCompanyByDomain = async (email) => { 
+
+  
+  
+
+  // 
+
+// }
+
 const findCompanyByReferralCode = async (code) => {
   if (!code) return null;
   const trimmed = code.trim().toUpperCase();
