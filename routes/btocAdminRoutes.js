@@ -23,7 +23,40 @@ const logoStorage = multer.diskStorage({
     cb(null, `logo_${Date.now()}${path.extname(file.originalname)}`);
   },
 });
-const uploadLogo = multer({ storage: logoStorage, limits: { fileSize: 2 * 1024 * 1024 } });
+
+// Raised limit to 5 MB — logos are compressed on the frontend before upload
+// so in practice they'll be well under 1 MB, but this gives headroom.
+const uploadLogo = multer({
+  storage: logoStorage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowed = /jpeg|jpg|png|gif|webp|svg/;
+    const ext = path.extname(file.originalname).toLowerCase().replace(".", "");
+    if (allowed.test(ext)) return cb(null, true);
+    cb(new Error("Only image files are allowed (jpg, png, gif, webp, svg)"));
+  },
+});
+
+// ── Multer error handler wrapper ─────────────────────────────────────────────
+// Wraps uploadLogo.single() so MulterError is caught and returned as JSON
+// instead of crashing the server with an unhandled exception.
+function uploadLogoSingle(req, res, next) {
+  uploadLogo.single("logo")(req, res, (err) => {
+    if (!err) return next();
+    if (err.code === "LIMIT_FILE_SIZE") {
+      return res.status(413).json({
+        success: false,
+        message: "Logo file is too large. Maximum allowed size is 5 MB. Please compress the image and try again.",
+      });
+    }
+    return res.status(400).json({ success: false, message: err.message || "File upload error" });
+  });
+}
+
+// ── Helper: normalise multer file path → URL-safe "/uploads/logos/file.png" ──
+function normalizePath(filePath) {
+  return "/" + filePath.replace(/\\/g, "/");
+}
 
 /* ================= ADMIN DASHBOARD ================= */
 router.get("/dashboard", async (req, res) => {
@@ -62,45 +95,25 @@ router.get("/dashboard", async (req, res) => {
 });
 
 /* ================= ADD BTODR DOCTOR ================= */
-
 router.post("/doctors", async (req, res) => {
   try {
     let displayOrder = 9999;
-
     if (req.body.displayOrder !== undefined && req.body.displayOrder !== null) {
       const val = Number(req.body.displayOrder);
-      if (Number.isInteger(val) && val >= 1) {
-        displayOrder = val;
-      } else {
-        displayOrder = 9999;
-      }
+      if (Number.isInteger(val) && val >= 1) displayOrder = val;
     }
-
-    const doctor = new BtocDoctor({
-      ...req.body,
-      displayOrder
-    });
-
+    const doctor = new BtocDoctor({ ...req.body, displayOrder });
     await doctor.save();
-
     const docObj = doctor.toObject();
     delete docObj.password;
-
-    res.status(201).json({
-      message: "Doctor added successfully",
-      doctor: docObj
-    });
+    res.status(201).json({ message: "Doctor added successfully", doctor: docObj });
   } catch (error) {
-    res.status(400).json({
-      message: "Failed to add doctor",
-      error: error.message
-    });
+    res.status(400).json({ message: "Failed to add doctor", error: error.message });
   }
 });
 
 /* ================= UPDATE BTODR DOCTOR ================= */
-
-router.put("/doctors/:doctorId",  async (req, res) => {
+router.put("/doctors/:doctorId", async (req, res) => {
   try {
     const { doctorId } = req.params;
     const updateData = { ...req.body };
@@ -113,61 +126,31 @@ router.put("/doctors/:doctorId",  async (req, res) => {
 
     if (updateData.displayOrder !== undefined && updateData.displayOrder !== null && updateData.displayOrder !== "") {
       const val = Number(updateData.displayOrder);
-      if (Number.isInteger(val) && (val >= 1 || val === 9999)) {
-        updateData.displayOrder = val;
-      } else {
-        updateData.displayOrder = 9999;
-      }
+      updateData.displayOrder = (Number.isInteger(val) && (val >= 1 || val === 9999)) ? val : 9999;
     } else {
       const currentDoctor = await BtocDoctor.findById(doctorId);
-      if (currentDoctor) {
-        updateData.displayOrder = currentDoctor.displayOrder;
-      } else {
-        updateData.displayOrder = 9999;
-      }
+      updateData.displayOrder = currentDoctor ? currentDoctor.displayOrder : 9999;
     }
 
-    const doctor = await BtocDoctor.findByIdAndUpdate(
-      doctorId,
-      updateData,
-      { new: true, runValidators: true }
-    ).lean();
-
-    if (!doctor) {
-      return res.status(404).json({ message: "Doctor not found" });
-    }
-
+    const doctor = await BtocDoctor.findByIdAndUpdate(doctorId, updateData, { new: true, runValidators: true }).lean();
+    if (!doctor) return res.status(404).json({ message: "Doctor not found" });
     delete doctor.password;
-
-    res.json({
-      message: "Doctor updated successfully",
-      doctor
-    });
+    res.json({ message: "Doctor updated successfully", doctor });
   } catch (error) {
-    res.status(400).json({
-      message: "Failed to update doctor",
-      error: error.message
-    });
+    res.status(400).json({ message: "Failed to update doctor", error: error.message });
   }
 });
 
 /* ================= DELETE BTODR DOCTOR ================= */
 router.delete("/doctors/:doctorId", async (req, res) => {
   try {
-    const { doctorId } = req.params;
-    const doctor = await BtocDoctor.findByIdAndDelete(doctorId);
-    if (!doctor) {
-      return res.status(404).json({ message: "Doctor not found" });
-    }
+    const doctor = await BtocDoctor.findByIdAndDelete(req.params.doctorId);
+    if (!doctor) return res.status(404).json({ message: "Doctor not found" });
     res.json({ message: "Doctor deleted successfully" });
   } catch (error) {
-    res.status(500).json({
-      message: "Failed to delete doctor",
-      error: error.message
-    });
+    res.status(500).json({ message: "Failed to delete doctor", error: error.message });
   }
 });
-
 
 /* ================= GET ALL BTODR DOCTORS ================= */
 router.get("/doctors", async (req, res) => {
@@ -176,57 +159,34 @@ router.get("/doctors", async (req, res) => {
       .select("-password")
       .sort({ displayOrder: 1, createdAt: -1 })
       .lean();
-
     res.json(doctors);
   } catch (error) {
-    res.status(500).json({
-      message: "Failed to fetch doctors",
-      error: error.message
-    });
+    res.status(500).json({ message: "Failed to fetch doctors", error: error.message });
   }
 });
 
-
 /* ================= GET SINGLE BTODR DOCTOR ================= */
-router.get("/doctors/:doctorId",  async (req, res) => {
+router.get("/doctors/:doctorId", async (req, res) => {
   try {
-    const { doctorId } = req.params;
-
-    const doctor = await BtocDoctor.findById(doctorId)
-      .select("-password")
-      .lean();
-
-    if (!doctor) {
-      return res.status(404).json({ message: "Doctor not found" });
-    }
-
+    const doctor = await BtocDoctor.findById(req.params.doctorId).select("-password").lean();
+    if (!doctor) return res.status(404).json({ message: "Doctor not found" });
     res.json(doctor);
   } catch (error) {
-    res.status(500).json({
-      message: "Failed to fetch doctor",
-      error: error.message
-    });
+    res.status(500).json({ message: "Failed to fetch doctor", error: error.message });
   }
 });
 
 /* ================= GET DOCTOR'S APPOINTMENTS ================= */
-router.get("/doctors/:doctorId/appointments" , async (req, res) => {
+router.get("/doctors/:doctorId/appointments", async (req, res) => {
   try {
     const { doctorId } = req.params;
     const now = new Date();
+    const bookings = await Booking.find({ doctorId }).populate("employeeId", "name email phone").sort({ date: -1 }).lean();
 
-    const bookings = await Booking.find({ doctorId })
-      .populate("employeeId", "name email phone")
-      .sort({ date: -1 })
-      .lean();
-
-    if (bookings.length === 0) {
-      return res.json({ upcoming: [], past: [] });
-    }
+    if (bookings.length === 0) return res.json({ upcoming: [], past: [] });
 
     const formatted = bookings.map(b => {
       const slotStart = new Date(`${b.date} ${b.slot.split(" - ")[0]}`);
-
       return {
         _id: b._id,
         employeeName: b.name,
@@ -246,13 +206,11 @@ router.get("/doctors/:doctorId/appointments" , async (req, res) => {
       upcoming: formatted.filter(a => a.slotStart >= now),
       past: formatted.filter(a => a.slotStart < now),
     });
-
   } catch (error) {
     console.error("❌ Error fetching appointments:", error);
     res.status(500).json({ message: "Failed to fetch appointments" });
   }
 });
-
 
 // ─── CANADA PORTAL ADMIN ROUTES ──────────────────────────────────────────────
 
@@ -307,10 +265,7 @@ router.post("/ca/assign", async (req, res) => {
 
 router.delete("/ca/remove/:doctorId", async (req, res) => {
   try {
-    await CaTherapist.findOneAndUpdate(
-      { doctorId: req.params.doctorId },
-      { isActive: false }
-    );
+    await CaTherapist.findOneAndUpdate({ doctorId: req.params.doctorId }, { isActive: false });
     res.json({ success: true, message: "Doctor removed from CA portal" });
   } catch (err) {
     res.status(500).json({ success: false, message: "Server error" });
@@ -321,7 +276,6 @@ router.delete("/ca/remove/:doctorId", async (req, res) => {
 // COMPANY PORTAL MANAGEMENT (Admin)
 // ══════════════════════════════════════════════════════════════════
 
-// GET all companies
 router.get("/companies", async (req, res) => {
   try {
     const companies = await Company.find().sort({ createdAt: -1 })
@@ -332,7 +286,6 @@ router.get("/companies", async (req, res) => {
   }
 });
 
-// GET single company
 router.get("/companies/:id", async (req, res) => {
   try {
     const company = await Company.findById(req.params.id)
@@ -345,48 +298,42 @@ router.get("/companies/:id", async (req, res) => {
   }
 });
 
-// POST create company
-router.post("/companies", uploadLogo.single("logo"), async (req, res) => {
+// POST create company — JSON only; logo is stored as a base64 data URL
+// (or an external https URL via `logoUrl`). No multer, no disk writes.
+router.post("/companies", async (req, res) => {
   try {
-    const {
-      name, slug, tagline, website,
-      primaryColor, accentColor,
-      hrContactEmail, contractExpiry, sessionQuota,
-      referralCodes, domainPatterns,
-    } = req.body;
+    const { name, slug, tagline, website, primaryColor, accentColor,
+            hrContactEmail, contractExpiry, sessionQuota,
+            referralCodes, domainPatterns,
+            logoBase64, logoUrl } = req.body;
 
     if (!name || !slug) return res.status(400).json({ success: false, message: "Name and slug are required" });
 
     const existing = await Company.findOne({ slug: slug.toLowerCase() });
     if (existing) return res.status(409).json({ success: false, message: "Slug already taken" });
 
-    const logo = req.file ? `/${req.file.path.replace(/\\/g, "/")}` : (req.body.logoUrl || "");
+    // Prefer the inline data URL; fall back to external URL; otherwise blank.
+    const logo = (typeof logoBase64 === "string" && logoBase64.startsWith("data:"))
+      ? logoBase64
+      : (logoUrl || "");
 
-    const codes = Array.isArray(referralCodes)
-      ? referralCodes.map(c => c.trim().toUpperCase()).filter(Boolean)
-      : typeof referralCodes === "string"
-        ? referralCodes.split(",").map(c => c.trim().toUpperCase()).filter(Boolean)
-        : [];
+    const codes = typeof referralCodes === "string"
+      ? referralCodes.split(",").map(c => c.trim().toUpperCase()).filter(Boolean)
+      : (Array.isArray(referralCodes) ? referralCodes.map(c => c.trim().toUpperCase()).filter(Boolean) : []);
 
-    const domains = Array.isArray(domainPatterns)
-      ? domainPatterns.map(d => d.trim().toLowerCase()).filter(Boolean)
-      : typeof domainPatterns === "string"
-        ? domainPatterns.split(",").map(d => d.trim().toLowerCase()).filter(Boolean)
-        : [];
+    const domains = typeof domainPatterns === "string"
+      ? domainPatterns.split(",").map(d => d.trim().toLowerCase()).filter(Boolean)
+      : (Array.isArray(domainPatterns) ? domainPatterns.map(d => d.trim().toLowerCase()).filter(Boolean) : []);
 
-    // sessionQuota: null = unlimited (tenant companies default to unlimited)
-    const quota = sessionQuota !== undefined && sessionQuota !== "" && sessionQuota !== null
-      ? Number(sessionQuota)
-      : null;
+    const quota = (sessionQuota !== undefined && sessionQuota !== "" && sessionQuota !== null)
+      ? Number(sessionQuota) : null;
 
     const company = await Company.create({
       name, slug: slug.toLowerCase(), logo, tagline, website,
       primaryColor: primaryColor || "#DE6875",
       accentColor:  accentColor  || "#10191F",
       hrContactEmail, contractExpiry: contractExpiry || null,
-      sessionQuota: quota,
-      referralCodes: codes,
-      domainPatterns: domains,
+      sessionQuota: quota, referralCodes: codes, domainPatterns: domains,
     });
 
     res.status(201).json({ success: true, data: company });
@@ -396,8 +343,8 @@ router.post("/companies", uploadLogo.single("logo"), async (req, res) => {
   }
 });
 
-// PATCH update company
-router.patch("/companies/:id", uploadLogo.single("logo"), async (req, res) => {
+// PATCH update company — JSON only; logo via base64 data URL or external URL.
+router.patch("/companies/:id", async (req, res) => {
   try {
     const company = await Company.findById(req.params.id);
     if (!company) return res.status(404).json({ success: false, message: "Company not found" });
@@ -405,26 +352,27 @@ router.patch("/companies/:id", uploadLogo.single("logo"), async (req, res) => {
     const fields = ["name","slug","tagline","website","primaryColor","accentColor","hrContactEmail","contractExpiry"];
     fields.forEach(f => { if (req.body[f] !== undefined) company[f] = req.body[f]; });
 
-    // Handle sessionQuota separately: blank/empty → null (unlimited)
     if (req.body.sessionQuota !== undefined) {
       const sq = req.body.sessionQuota;
       company.sessionQuota = (sq !== "" && sq !== null && sq !== "null") ? Number(sq) : null;
     }
 
-    if (req.file) company.logo = `/${req.file.path.replace(/\\/g, "/")}`;
-    else if (req.body.logoUrl !== undefined) company.logo = req.body.logoUrl;
+    // Logo: data URL takes precedence; explicit empty string clears it.
+    if (typeof req.body.logoBase64 === "string" && req.body.logoBase64.startsWith("data:")) {
+      company.logo = req.body.logoBase64;
+    } else if (req.body.logoUrl !== undefined) {
+      company.logo = req.body.logoUrl;
+    }
 
     if (req.body.referralCodes !== undefined) {
       const codes = Array.isArray(req.body.referralCodes)
-        ? req.body.referralCodes
-        : req.body.referralCodes.split(",");
+        ? req.body.referralCodes : req.body.referralCodes.split(",");
       company.referralCodes = codes.map(c => c.trim().toUpperCase()).filter(Boolean);
     }
 
     if (req.body.domainPatterns !== undefined) {
       const domains = Array.isArray(req.body.domainPatterns)
-        ? req.body.domainPatterns
-        : req.body.domainPatterns.split(",");
+        ? req.body.domainPatterns : req.body.domainPatterns.split(",");
       company.domainPatterns = domains.map(d => d.trim().toLowerCase()).filter(Boolean);
     }
 
@@ -435,7 +383,6 @@ router.patch("/companies/:id", uploadLogo.single("logo"), async (req, res) => {
   }
 });
 
-// DELETE company
 router.delete("/companies/:id", async (req, res) => {
   try {
     await Company.findByIdAndDelete(req.params.id);
@@ -445,7 +392,6 @@ router.delete("/companies/:id", async (req, res) => {
   }
 });
 
-// POST assign doctors to company
 router.post("/companies/:id/assign-doctors", async (req, res) => {
   try {
     const { doctorIds } = req.body;
@@ -461,7 +407,6 @@ router.post("/companies/:id/assign-doctors", async (req, res) => {
   }
 });
 
-// DELETE remove doctor from company
 router.delete("/companies/:id/doctors/:doctorId", async (req, res) => {
   try {
     await Company.findByIdAndUpdate(req.params.id, { $pull: { doctors: req.params.doctorId } });
