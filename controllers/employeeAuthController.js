@@ -4,8 +4,30 @@ import Company   from "../models/Company.js";
 import bcrypt    from "bcryptjs";
 import jwt       from "jsonwebtoken";
 import { sendWhatsAppOtp } from "../services/whatsapp.service.js";
+import { sendEmail }       from "../utils/emails.js";
 
-const otpStore = new Map();
+const otpStore      = new Map();   // signup OTPs (keyed by fullPhone) — existing
+const loginOtpStore = new Map();   // login OTPs (keyed by identifier) — new
+
+// ── Email OTP helper (signup + login) ────────────────────────────────────────
+const sendOtpByEmail = async (to, otp, purpose = "verification") => {
+  const subject = purpose === "login"
+    ? "Your Mindery login code"
+    : "Your Mindery verification code";
+  const text = `Your OTP is ${otp}. It expires in 5 minutes.`;
+  const html = `
+    <div style="font-family:'DM Sans',Arial,sans-serif;max-width:480px;margin:0 auto;padding:24px;color:#1a1a1a;">
+      <h2 style="color:#DE6875;margin:0 0 12px;">Your Mindery code</h2>
+      <p style="font-size:14px;color:#555;margin:0 0 16px;">
+        Use the OTP below to ${purpose === "login" ? "sign in to" : "verify"} your Mindery account.
+      </p>
+      <div style="font-size:30px;letter-spacing:8px;font-weight:700;color:#DE6875;
+                  background:#fff5f6;border:1px solid #fde8ea;border-radius:12px;
+                  padding:14px 20px;text-align:center;margin:0 0 16px;">${otp}</div>
+      <p style="font-size:12px;color:#888;margin:0;">This code expires in 5 minutes. If you didn't request it, ignore this email.</p>
+    </div>`;
+  await sendEmail({ to, subject, text, html });
+};
 
 const detectCompanyByDomain = async (email) => {
   if (!email) return null;
@@ -234,5 +256,130 @@ export const getMe = async (req, res) => {
     return res.status(200).json({ success: true, employee: req.employee });
   } catch (err) {
     return res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+/* ─── SIGNUP: SEND OTP TO EMAIL (FALLBACK) ─────────────────────────────────── */
+// Frontend calls this when WhatsApp didn't deliver. We reuse the SAME phone-keyed
+// otpStore so the existing /signup endpoint can verify regardless of channel.
+export const sendSignupOtpEmail = async (req, res) => {
+  try {
+    const { email, phone, countryCode } = req.body;
+    if (!email || !phone || !countryCode) {
+      return res.status(400).json({ message: "Email, phone and country code are required" });
+    }
+    const fullPhone = `${countryCode}${phone}`;
+    const company = await detectCompanyByDomain(email);
+    if (company) {
+      return res.status(403).json({
+        message: "You cannot register with a work email. Please use your personal email.",
+        isOrgUser: true, companyName: company.name,
+      });
+    }
+    const existing = await Employee.findOne({ phone: fullPhone });
+    if (existing) {
+      return res.status(400).json({ message: "This number is already registered. Please login instead." });
+    }
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    otpStore.set(fullPhone, { otp, expiresAt: Date.now() + 5 * 60 * 1000, channel: "email" });
+    await sendOtpByEmail(email, otp, "verification");
+    return res.json({ message: "OTP sent to your email" });
+  } catch (err) {
+    console.error("Send signup email OTP error:", err.message);
+    return res.status(500).json({ message: "Failed to send OTP to email" });
+  }
+};
+
+/* ─── LOGIN: SEND OTP (PHONE OR EMAIL) ─────────────────────────────────────── */
+// body: { channel: "phone" | "email", phone?, countryCode?, email? }
+export const sendLoginOtp = async (req, res) => {
+  try {
+    const { channel, phone, countryCode, email } = req.body;
+    if (channel !== "phone" && channel !== "email") {
+      return res.status(400).json({ message: "channel must be 'phone' or 'email'" });
+    }
+
+    let user, identifier, sendVia;
+    if (channel === "phone") {
+      if (!phone || !countryCode) return res.status(400).json({ message: "Phone and country code required" });
+      const fullPhone = `${countryCode}${phone}`;
+      user = await Employee.findOne({ phone: fullPhone });
+      if (!user) {
+        const member = await OrgMember.findOne({ phone: fullPhone });
+        if (member) return res.status(403).json({ message: "This number is registered with an organization account. Please login via the Organization Portal.", isOrgUser: true });
+        return res.status(404).json({ message: "No account found with this number" });
+      }
+      identifier = fullPhone;
+      sendVia    = "phone";
+    } else {
+      if (!email) return res.status(400).json({ message: "Email required" });
+      user = await Employee.findOne({ email: email.toLowerCase().trim() });
+      if (!user) return res.status(404).json({ message: "No account found with this email" });
+      identifier = user.email;
+      sendVia    = "email";
+    }
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    loginOtpStore.set(identifier, { otp, expiresAt: Date.now() + 5 * 60 * 1000, userId: user._id });
+
+    if (sendVia === "phone") {
+      await sendWhatsAppOtp(identifier, otp);
+      return res.json({ message: "OTP sent on WhatsApp", channel: "phone" });
+    } else {
+      await sendOtpByEmail(identifier, otp, "login");
+      return res.json({ message: "OTP sent to your email", channel: "email" });
+    }
+  } catch (err) {
+    console.error("Send login OTP error:", err.message);
+    return res.status(500).json({ message: "Failed to send login OTP" });
+  }
+};
+
+/* ─── LOGIN: VERIFY OTP ────────────────────────────────────────────────────── */
+// body: { channel: "phone" | "email", phone?, countryCode?, email?, otp }
+export const verifyLoginOtp = async (req, res) => {
+  try {
+    const { channel, phone, countryCode, email, otp } = req.body;
+    if (!otp) return res.status(400).json({ message: "OTP is required" });
+
+    let identifier;
+    if (channel === "phone") {
+      if (!phone || !countryCode) return res.status(400).json({ message: "Phone and country code required" });
+      identifier = `${countryCode}${phone}`;
+    } else if (channel === "email") {
+      if (!email) return res.status(400).json({ message: "Email required" });
+      identifier = email.toLowerCase().trim();
+    } else {
+      return res.status(400).json({ message: "channel must be 'phone' or 'email'" });
+    }
+
+    const record = loginOtpStore.get(identifier);
+    if (!record) return res.status(400).json({ message: "OTP expired or not requested" });
+    if (Date.now() > record.expiresAt) { loginOtpStore.delete(identifier); return res.status(400).json({ message: "OTP expired" }); }
+    if (record.otp !== otp) return res.status(400).json({ message: "Invalid OTP" });
+    loginOtpStore.delete(identifier);
+
+    const employee = await Employee.findById(record.userId).populate("companyId", "name slug logo primaryColor accentColor");
+    if (!employee) return res.status(404).json({ message: "Account not found" });
+
+    const company = employee.companyId;
+    const token = jwt.sign(
+      { id: employee._id, phone: employee.phone, role: "employee", companyId: company?._id || null },
+      process.env.JWT_SECRET, { expiresIn: "7d" }
+    );
+    return res.json({
+      token,
+      employee: {
+        _id: employee._id, name: employee.name, email: employee.email, phone: employee.phone,
+        userType: "employee",
+        referralCode: employee.referralCode,
+        caWalletBalance: employee.caWalletBalance || 0,
+        companyId: company?._id || null, companyName: company?.name || null,
+        companySlug: company?.slug || null, companyLogo: company?.logo || null,
+      },
+    });
+  } catch (err) {
+    console.error("Verify login OTP error:", err);
+    return res.status(500).json({ message: "Login verification failed" });
   }
 };
