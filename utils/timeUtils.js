@@ -86,6 +86,68 @@ export function convertAvailabilityToTimezone(availability, targetTZ) {
  * @param {Object} doctor - Mongoose Doctor document
  * @returns {Object} - IST availability map { "YYYY-MM-DD": [{ startTime, endTime }] }
  */
+// export function buildAvailabilityMap(doctor) {
+//   const toMinutes = (t) => {
+//     const [h, m] = t.split(":").map(Number);
+//     return h * 60 + m;
+//   };
+//   const minutesToTime = (m) =>
+//     `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+
+//   const buildSlots = (rule) => {
+//     const start = toMinutes(rule.startTime);
+//     const end = toMinutes(rule.endTime);
+//     const duration = rule.slotDuration;
+//     const breaks = (rule.breaks || []).map((b) => ({
+//       start: toMinutes(b.startTime),
+//       end: toMinutes(b.endTime),
+//     }));
+
+//     const slots = [];
+//     for (let t = start; t + duration <= end; t += duration) {
+//       const isBreak = breaks.some((b) => t < b.end && t + duration > b.start);
+//       if (!isBreak) {
+//         slots.push({
+//           startTime: minutesToTime(t),
+//           endTime: minutesToTime(t + duration),
+//         });
+//       }
+//     }
+//     return slots;
+//   };
+
+//   const result = {};
+//   const today = new Date();
+
+//   for (let i = 0; i < 60; i++) {
+//     const d = new Date(today);
+//     d.setDate(today.getDate() + i);
+//     const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+//     // Date-specific rule takes priority
+//     const dateRule = (doctor.dateAvailability || []).find(
+//       (da) => da.date === dateStr && da.isActive
+//     );
+//     if (dateRule) {
+//       const slots = buildSlots(dateRule);
+//       if (slots.length) result[dateStr] = slots;
+//       continue;
+//     }
+
+//     // Weekly recurring rule
+//     const dayName = d.toLocaleDateString("en-US", { weekday: "long" });
+//     const weeklyRule = (doctor.weeklyAvailability || []).find(
+//       (w) => w.day === dayName && w.isActive
+//     );
+//     if (weeklyRule) {
+//       const slots = buildSlots(weeklyRule);
+//       if (slots.length) result[dateStr] = slots;
+//     }
+//   }
+
+//   return result;
+// }
+
 export function buildAvailabilityMap(doctor) {
   const toMinutes = (t) => {
     const [h, m] = t.split(":").map(Number);
@@ -118,18 +180,29 @@ export function buildAvailabilityMap(doctor) {
 
   const result = {};
   const today = new Date();
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  
+  // ✅ ADD THIS: Get current time in minutes since midnight for TODAY filtering
+  const nowMinutes = today.getHours() * 60 + today.getMinutes();
 
   for (let i = 0; i < 60; i++) {
     const d = new Date(today);
     d.setDate(today.getDate() + i);
     const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    const isToday = dateStr === todayStr;
 
     // Date-specific rule takes priority
     const dateRule = (doctor.dateAvailability || []).find(
       (da) => da.date === dateStr && da.isActive
     );
     if (dateRule) {
-      const slots = buildSlots(dateRule);
+      let slots = buildSlots(dateRule);
+      
+      // ✅ ADD THIS: Filter out past slots for TODAY only
+      if (isToday) {
+        slots = slots.filter((slot) => toMinutes(slot.startTime) > nowMinutes);
+      }
+      
       if (slots.length) result[dateStr] = slots;
       continue;
     }
@@ -140,7 +213,13 @@ export function buildAvailabilityMap(doctor) {
       (w) => w.day === dayName && w.isActive
     );
     if (weeklyRule) {
-      const slots = buildSlots(weeklyRule);
+      let slots = buildSlots(weeklyRule);
+      
+      // ✅ ADD THIS: Filter out past slots for TODAY only
+      if (isToday) {
+        slots = slots.filter((slot) => toMinutes(slot.endTime) > nowMinutes);
+      }
+      
       if (slots.length) result[dateStr] = slots;
     }
   }
