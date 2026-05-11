@@ -13,6 +13,14 @@ import { buildAvailabilityMap } from "../utils/timeUtils.js";
 import { sendBookingConfirmation } from "../services/whatsapp.service.js";
 import { notifyDoctorByEmail } from "../utils/notifyDoctor.js";
 
+import dayjs from "dayjs";
+import utc from "dayjs/plugin/utc.js";
+import timezone from "dayjs/plugin/timezone.js";
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
+
+const IST = "Asia/Kolkata";
 const router = express.Router({ mergeParams: true });
 
 // ─── Helper: load & validate company by slug ─────────────────────────────────
@@ -69,57 +77,164 @@ router.get("/verify-access", authEmployee, async (req, res) => {
 // PROTECTED — Get therapists assigned to this company
 // GET /api/company-portal/:slug/therapists
 // ══════════════════════════════════════════════════════════════════
+
 router.get("/therapists", authEmployee, async (req, res) => {
   try {
     const company = await getCompany(req.params.slug);
-    if (!company) return res.status(404).json({ success: false, message: "Company not found" });
 
-    const allowed = await verifyAccess(req.employee._id, company);
-    if (!allowed) return res.status(403).json({ success: false, message: "Access denied" });
+    if (!company) {
+      return res.status(404).json({
+        success: false,
+        message: "Company not found",
+      });
+    }
 
-    const doctors = (company.doctors || []).filter(d => d && d.isActive);
+    const allowed = await verifyAccess(
+      req.employee._id,
+      company
+    );
 
-    const therapists = doctors.map(d => {
-      // Compute next available slot from the doctor's date+weekly availability
-      let nextSlot = null;
-      try {
-        const av = typeof d.getUpcomingAvailability45 === "function"
-          ? d.getUpcomingAvailability45(30)
-          : (typeof d.getUpcomingAvailability === "function" ? d.getUpcomingAvailability(30) : {});
-        const firstDate = Object.keys(av).sort()[0];
-        if (firstDate && av[firstDate]?.length) {
-          const firstSlot = av[firstDate][0];
-          // slot strings look like "09:00 - 09:45" — take the start time
-          const startTime = String(firstSlot).split(" - ")[0];
-          nextSlot = { date: firstDate, time: startTime };
+    if (!allowed) {
+      return res.status(403).json({
+        success: false,
+        message: "Access denied",
+      });
+    }
+
+    const doctors = (company.doctors || []).filter(
+      (d) => d && d.isActive
+    );
+
+    const therapists = await Promise.all(
+      doctors.map(async (d) => {
+        let nextSlot = null;
+
+        try {
+          // Get availability
+          const av =
+            typeof d.getUpcomingAvailability45 ===
+            "function"
+              ? d.getUpcomingAvailability45(30)
+              : typeof d.getUpcomingAvailability ===
+                "function"
+              ? d.getUpcomingAvailability(30)
+              : {};
+
+          // Get booked bookings
+          const bookedBookings =
+            await Booking.find({
+              doctorId: d._id,
+              companyId: company._id,
+              status: "booked",
+            })
+              .select("date slot")
+              .lean();
+
+          // Create lookup set
+          const bookedSet = new Set(
+            bookedBookings.map(
+              (b) => `${b.date}|${b.slot}`
+            )
+          );
+
+          // Current time + 4 hour buffer
+          const nowPlusBuffer = dayjs()
+            .tz(IST)
+            .add(4, "hour");
+
+          // Loop availability
+          for (const [date, slots] of Object.entries(
+            av
+          )) {
+            for (const s of slots) {
+              // Normalize slot format
+              const slotStr =
+                typeof s === "string"
+                  ? s.trim()
+                  : `${s.startTime} - ${s.endTime}`;
+
+              // Skip booked slots
+              if (
+                bookedSet.has(`${date}|${slotStr}`)
+              ) {
+                continue;
+              }
+
+              // Extract start time
+              const startTime = slotStr
+                .split(" - ")[0]
+                .trim();
+
+              // Create slot datetime
+              const slotDateTime = dayjs.tz(
+                `${date} ${startTime}`,
+                "YYYY-MM-DD HH:mm",
+                IST
+              );
+
+              // Skip slots before now + 4 hours
+              if (
+                slotDateTime.isBefore(
+                  nowPlusBuffer
+                )
+              ) {
+                continue;
+              }
+
+              // Valid slot found
+              nextSlot = {
+                date,
+                time: startTime,
+              };
+
+              break;
+            }
+
+            if (nextSlot) {
+              break;
+            }
+          }
+        } catch (e) {
+          nextSlot = null;
         }
-      } catch (e) {
-        nextSlot = null;
-      }
 
-      return {
-        _id:                d._id,
-        name:               d.name,
-        profilePhoto:       d.profilePhoto,
-        specialization:     d.specialization,
-        profession:         d.profession,
-        about:              d.about,
-        experience:         d.experience,
-        languages:          d.languages,
-        consultationOptions: d.consultationOptions,
-        originalPrice:      d.consultationOptions?.[0]?.price ?? null,
-        finalPrice:         0,           // ₹0 for company users
-        isAvailable:        d.isAvailable,
-        location:           d.location,
-        gender:             d.gender,
-        nextSlot,
-      };
+        return {
+          _id: d._id,
+          name: d.name,
+          profilePhoto: d.profilePhoto,
+          specialization: d.specialization,
+          profession: d.profession,
+          about: d.about,
+          experience: d.experience,
+          languages: d.languages,
+          consultationOptions:
+            d.consultationOptions,
+          originalPrice:
+            d.consultationOptions?.[0]?.price ??
+            null,
+          finalPrice: 0,
+          isAvailable: d.isAvailable,
+          location: d.location,
+          gender: d.gender,
+          nextSlot,
+        };
+      })
+    );
+
+    res.json({
+      success: true,
+      data: therapists,
     });
-
-    res.json({ success: true, data: therapists });
   } catch (err) {
-    console.error("Company therapists error:", err);
-    res.status(500).json({ success: false, message: "Server error" });
+    console.error(
+      "Company therapists error:",
+      err
+    );
+
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+    });
   }
 });
 
@@ -142,6 +257,66 @@ router.get("/therapists/:doctorId", authEmployee, async (req, res) => {
     if (!doctor || !doctor.isActive) return res.status(404).json({ success: false, message: "Therapist not found" });
 
     const availability = buildAvailabilityMap(doctor);
+
+    // Load booked bookings
+const bookedBookings = await Booking.find({
+  doctorId: doctor._id,
+  companyId: company._id,
+  status: "booked",
+})
+  .select("date slot")
+  .lean();
+
+// Create lookup set
+const bookedSet = new Set(
+  bookedBookings.map((b) => `${b.date}|${b.slot}`)
+);
+
+const todayStr = dayjs()
+  .tz(IST)
+  .format("YYYY-MM-DD");
+
+// Current time + 4 hour buffer
+const nowPlusBuffer = dayjs()
+  .tz(IST)
+  .add(4, "hour");
+
+// Filter availability
+for (const [date, slots] of Object.entries(
+  availability
+)) {
+  availability[date] = slots.filter((slot) => {
+
+    const slotStr =
+      `${slot.startTime} - ${slot.endTime}`;
+
+    // Remove booked slots
+    if (bookedSet.has(`${date}|${slotStr}`)) {
+      return false;
+    }
+
+    // Apply 4-hour rule for today
+    if (date === todayStr) {
+
+      const slotDateTime = dayjs.tz(
+        `${date} ${slot.startTime}`,
+        "YYYY-MM-DD HH:mm",
+        IST
+      );
+
+      return slotDateTime.isSameOrAfter(
+        nowPlusBuffer
+      );
+    }
+
+    return true;
+  });
+
+  // Remove empty dates
+  if (availability[date].length === 0) {
+    delete availability[date];
+  }
+}
 
     res.json({
       success: true,
