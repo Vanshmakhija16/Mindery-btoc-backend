@@ -62,9 +62,15 @@ export const sendOtp = async (req, res) => {
   try {
     const { email, phone, countryCode } = req.body;
     if (!phone || !countryCode || !email) return res.status(400).json({ message: "Phone, country code and email are required" });
-    const fullPhone = `${countryCode}${phone}`;
+    const cleanPhone = phone.toString().replace(/\D/g, "");
+    const cleanCC = countryCode.toString().replace(/\D/g, "");
+
+    const fullPhone = `${cleanCC}${cleanPhone}`;
     const company = await detectCompanyByDomain(email);
     if (company) return res.status(403).json({ message: "You cannot register with a work email. Please use your personal email.", isOrgUser: true, companyName: company.name });
+    const normalizedEmail = email.toString().trim().toLowerCase();
+    const existsByEmail = await Employee.findOne({ email: normalizedEmail });
+    if (existsByEmail) return res.status(400).json({ message: "This email is already registered. Please login instead." });
     const existsEmployee = await Employee.findOne({ phone: fullPhone });
     if (existsEmployee) return res.status(400).json({ message: "This number is already registered. Please login instead." });
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
@@ -97,10 +103,13 @@ export const validateCaReferralCode = async (req, res) => {
   try {
     const { code } = req.body;
     if (!code) return res.status(400).json({ valid: false, message: "Code is required" });
-    const referrer = await Employee.findOne({ referralCode: code.trim().toUpperCase() }).select("name referralCode");
+    const normalized = code.toString().trim().toUpperCase();
+    if (!normalized) return res.status(400).json({ valid: false, message: "Code is required" });
+    const referrer = await Employee.findOne({ referralCode: normalized }).select("name referralCode");
     if (!referrer) return res.status(404).json({ valid: false, message: "Invalid referral code" });
     return res.json({ valid: true, referrerName: referrer.name, referralCode: referrer.referralCode });
   } catch (err) {
+    console.error("Validate CA referral code error:", err);
     return res.status(500).json({ valid: false, message: "Server error" });
   }
 };
@@ -108,12 +117,37 @@ export const validateCaReferralCode = async (req, res) => {
 /* ─── REGISTER ─────────────────────────────────────────────────────────────── */
 export const registerEmployee = async (req, res) => {
   try {
+    console.log("REGISTER BODY:", req.body);
     const { name, email, phone, countryCode, password, otp, referralCode, caReferralCode } = req.body;
-    if (!name || !email || !phone || !countryCode || !password || !otp) return res.status(400).json({ message: "All fields are required" });
-    const fullPhone = `${countryCode}${phone}`;
+
+
+
+    if (!name || !email || !phone || !countryCode || !otp) return res.status(400).json({ message: "All fields are required" });
+    const cleanPhone = phone.toString().replace(/\D/g, "");
+    const cleanCC = countryCode.toString().replace(/\D/g, "");
+
+    const fullPhone = `${cleanCC}${cleanPhone}`;
+        console.log("FULL PHONE:", fullPhone);
+
+        console.log({
+  name,
+  email,
+  phone,
+  countryCode,
+  password,
+  otp,
+});
+
+console.log("OTP STORE ENTRY:", otpStore.get(fullPhone));
 
     const domainCompany = await detectCompanyByDomain(email);
     if (domainCompany) return res.status(403).json({ message: "You cannot register with a work email. Please use your personal email.", isOrgUser: true, companyName: domainCompany.name });
+
+    const normalizedEmail = email.toString().trim().toLowerCase();
+    const existsByEmail = await Employee.findOne({ email: normalizedEmail });
+    if (existsByEmail) return res.status(400).json({ message: "This email is already registered. Please login instead." });
+    const existsByPhone = await Employee.findOne({ phone: fullPhone });
+    if (existsByPhone) return res.status(400).json({ message: "This number is already registered. Please login instead." });
 
     const record = otpStore.get(fullPhone);
     if (!record) return res.status(400).json({ message: "OTP expired or not requested" });
@@ -141,7 +175,10 @@ export const registerEmployee = async (req, res) => {
       }
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const finalPassword =
+      password || Math.random().toString(36).slice(-8);
+
+    const hashedPassword = await bcrypt.hash(finalPassword, 10);
     // Employee pre-save auto-generates referralCode (MIN-XXXXXX)
     const employee = await Employee.create({
       name, email, phone: fullPhone, password: hashedPassword,
@@ -268,7 +305,9 @@ export const sendSignupOtpEmail = async (req, res) => {
     if (!email || !phone || !countryCode) {
       return res.status(400).json({ message: "Email, phone and country code are required" });
     }
-    const fullPhone = `${countryCode}${phone}`;
+    const cleanPhone = phone.toString().replace(/\D/g, "");
+    const cleanCC = countryCode.toString().replace(/\D/g, "");
+    const fullPhone = `${cleanCC}${cleanPhone}`;
     const company = await detectCompanyByDomain(email);
     if (company) {
       return res.status(403).json({
@@ -276,13 +315,18 @@ export const sendSignupOtpEmail = async (req, res) => {
         isOrgUser: true, companyName: company.name,
       });
     }
+    const normalizedEmail = email.toString().trim().toLowerCase();
+    const existsByEmail = await Employee.findOne({ email: normalizedEmail });
+    if (existsByEmail) {
+      return res.status(400).json({ message: "This email is already registered. Please login instead." });
+    }
     const existing = await Employee.findOne({ phone: fullPhone });
     if (existing) {
       return res.status(400).json({ message: "This number is already registered. Please login instead." });
     }
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     otpStore.set(fullPhone, { otp, expiresAt: Date.now() + 5 * 60 * 1000, channel: "email" });
-    await sendOtpByEmail(email, otp, "verification");
+    await sendOtpByEmail(normalizedEmail, otp, "verification");
     return res.json({ message: "OTP sent to your email" });
   } catch (err) {
     console.error("Send signup email OTP error:", err.message);

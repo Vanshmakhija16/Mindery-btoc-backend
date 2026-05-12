@@ -73,13 +73,14 @@ export const sendEmail = async ({ to, subject, text, html }) => {
       html,
     });
 
-    // console.log("✅ Mail sent:", {
-    //   to,
-    //   messageId: info.messageId,
-    //   response: info.response,
-    //   accepted: info.accepted,
-    //   rejected: info.rejected,
-    // });
+    console.log("✅ Mail sent:", {
+      to,
+      messageId: info.messageId,
+      response: info.response,
+      accepted: info.accepted,
+      rejected: info.rejected,
+      pending: info.pending,
+    });
 
     return info;
   } catch (err) {
