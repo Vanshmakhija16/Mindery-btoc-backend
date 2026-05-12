@@ -60,22 +60,40 @@ router.get("/therapists", async (req, res) => {
     );
 
     // Filter therapists with available slots
-    const availableTherapists = therapistsWithSlots.filter(
-      (t) => t.nextSlot !== null
-    );
+// Sort therapists:
+// 1. Available therapists first
+// 2. Earliest slot first
+// 3. No-slot therapists at bottom
 
-    // Sort by nextSlot ascending (earliest slots first)
-    availableTherapists.sort((a, b) => {
-      const timeA = a.nextSlot?.dateTime?.getTime() || Number.MAX_VALUE;
-      const timeB = b.nextSlot?.dateTime?.getTime() || Number.MAX_VALUE;
-      return timeA - timeB;
-    });
+therapistsWithSlots.sort((a, b) => {
+  const hasSlotA = !!a.nextSlot;
+  const hasSlotB = !!b.nextSlot;
 
-    // Format response with original shape function
-    const formattedTherapists = availableTherapists.map((entry) => ({
-      ...shapeTherapist(entry.doctorId, entry),
-      nextSlot: entry.nextSlot
-    }));
+  // Available first
+  if (hasSlotA && !hasSlotB) return -1;
+  if (!hasSlotA && hasSlotB) return 1;
+
+  // If both have slots, sort by nearest slot
+  if (hasSlotA && hasSlotB) {
+    const timeA =
+      a.nextSlot?.dateTime?.getTime() ||
+      Number.MAX_VALUE;
+
+    const timeB =
+      b.nextSlot?.dateTime?.getTime() ||
+      Number.MAX_VALUE;
+
+    return timeA - timeB;
+  }
+
+  return 0;
+});
+
+// Format response
+const formattedTherapists = therapistsWithSlots.map((entry) => ({
+  ...shapeTherapist(entry.doctorId, entry),
+  nextSlot: entry.nextSlot
+}));
 
     res.json({ success: true, data: formattedTherapists });
   } catch (err) {
