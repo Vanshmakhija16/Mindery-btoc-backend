@@ -8,7 +8,7 @@ import adminAuth from "../middlewares/adminAuth.js";
 import razorpayInstance from "../config/razorpay.js";
 import { sendBookingConfirmation } from "../services/whatsapp.service.js";
 import { notifyDoctorByEmail } from "../utils/notifyDoctor.js";
-import { convertAvailabilityToTimezone, buildAvailabilityMap } from "../utils/timeUtils.js";
+import { convertAvailabilityToTimezone, buildAvailabilityMap, getNextSlot } from "../utils/timeUtils.js";
 import { createPayPalOrder, capturePayPalOrder } from "../config/paypal.js";
 import { authEmployee } from "../middlewares/authEmployee.js";
 
@@ -48,8 +48,36 @@ function shapeTherapist(doc, entry) {
 router.get("/therapists", async (req, res) => {
   try {
     const caEntries = await CaTherapist.find({ isActive: true }).populate("doctorId");
-    const therapists = caEntries.filter((e) => e.doctorId).map((e) => shapeTherapist(e.doctorId, e));
-    res.json({ success: true, data: therapists });
+    
+    // Calculate nextSlot for each therapist
+    const therapistsWithSlots = await Promise.all(
+      caEntries
+        .filter((e) => e.doctorId)
+        .map(async (e) => {
+          const nextSlot = await getNextSlot(e.doctorId, e.doctorId._id, Booking);
+          return { ...e.toObject(), nextSlot };
+        })
+    );
+
+    // Filter therapists with available slots
+    const availableTherapists = therapistsWithSlots.filter(
+      (t) => t.nextSlot !== null
+    );
+
+    // Sort by nextSlot ascending (earliest slots first)
+    availableTherapists.sort((a, b) => {
+      const timeA = a.nextSlot?.dateTime?.getTime() || Number.MAX_VALUE;
+      const timeB = b.nextSlot?.dateTime?.getTime() || Number.MAX_VALUE;
+      return timeA - timeB;
+    });
+
+    // Format response with original shape function
+    const formattedTherapists = availableTherapists.map((entry) => ({
+      ...shapeTherapist(entry.doctorId, entry),
+      nextSlot: entry.nextSlot
+    }));
+
+    res.json({ success: true, data: formattedTherapists });
   } catch (err) {
     console.error("CA therapists error:", err);
     res.status(500).json({ success: false, message: "Server error" });

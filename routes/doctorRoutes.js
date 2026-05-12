@@ -13,6 +13,7 @@ import dayjs from "dayjs";
 import utc from "dayjs/plugin/utc.js";
 import timezone from "dayjs/plugin/timezone.js";
 import customParseFormat from "dayjs/plugin/customParseFormat.js";
+import { getNextSlot } from "../utils/timeUtils.js";
 
 dayjs.extend(customParseFormat);
 dayjs.extend(utc);
@@ -292,7 +293,7 @@ router.get("/", async (req, res) => {
 router.get("/all", async (req, res) => {
   try {
     const doctors = await btocDoctor
-      .find({ isActive: true, role: "doctor" })   // ✅ add this
+      .find({ isActive: true, role: "doctor" })
       .select(`
         name
         specialization
@@ -314,10 +315,33 @@ router.get("/all", async (req, res) => {
         displayOrder
         role
       `)
-      .sort({ displayOrder: 1, createdAt: -1 })
       .lean();
 
-    res.status(200).json(doctors);
+    // Calculate nextSlot for each doctor with sorting
+    const doctorsWithSlots = await Promise.all(
+      doctors.map(async (d) => {
+        const nextSlot = await getNextSlot(d, d._id, Booking);
+        return { ...d, nextSlot };
+      })
+    );
+
+    // Filter doctors with available slots
+    const doctorsWithAvailability = doctorsWithSlots.filter(
+      (d) => d.nextSlot !== null
+    );
+
+    // Sort by nextSlot ascending (earliest slots first)
+    doctorsWithAvailability.sort((a, b) => {
+      const timeA = a.nextSlot?.dateTime?.getTime() || Number.MAX_VALUE;
+      const timeB = b.nextSlot?.dateTime?.getTime() || Number.MAX_VALUE;
+      return timeA - timeB;
+    });
+
+    res.status(200).json({
+      success: true,
+      count: doctorsWithAvailability.length,
+      data: doctorsWithAvailability
+    });
   } catch (error) {
     console.error("❌ Error fetching doctors:", error);
     res.status(500).json({
@@ -344,7 +368,6 @@ router.get("/offer", async (req, res) => {
         profession
         `
       )
-      .sort({ displayOrder: 1, createdAt: -1 })
       .lean();
 
     if (!doctors || doctors.length === 0) {
@@ -354,60 +377,28 @@ router.get("/offer", async (req, res) => {
       });
     }
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // Calculate nextSlot for each doctor
+    const doctorsWithSlots = await Promise.all(
+      doctors.map(async (d) => {
+        const nextSlot = await getNextSlot(d, d._id, Booking);
+        
+        // Keep existing availability check for backward compatibility
+        const hasAvailability = nextSlot !== null;
+        
+        return { ...d, nextSlot, hasAvailability };
+      })
+    );
 
-    const enrichedDoctors = doctors.map((doctor) => {
-      /** -----------------------------
-       * DATE SLOTS (existing logic)
-       * ----------------------------- */
-      const dateSlots = doctor.dateSlots || {};
+    // Filter doctors with available slots
+    const enrichedDoctors = doctorsWithSlots.filter(
+      (d) => d.hasAvailability
+    );
 
-      const hasDateSlots = Object.entries(dateSlots).some(
-        ([dateStr, slots]) => {
-          if (!Array.isArray(slots) || slots.length === 0) return false;
-
-          const slotDate = new Date(dateStr);
-          slotDate.setHours(0, 0, 0, 0);
-
-          return slotDate >= today;
-        }
-      );
-
-      /** -----------------------------
-       * WEEKLY AVAILABILITY (NEW)
-       * ----------------------------- */
-      const hasWeeklyAvailability =
-        Array.isArray(doctor.weeklyAvailability) &&
-        doctor.weeklyAvailability.some(
-          (slot) =>
-            slot.isActive === true &&
-            slot.startTime &&
-            slot.endTime
-        );
-
-      /** -----------------------------
-       * DATE AVAILABILITY (NEW)
-       * ----------------------------- */
-      const hasDateAvailability =
-        Array.isArray(doctor.dateAvailability) &&
-        doctor.dateAvailability.some(
-          (d) =>
-            d.date &&
-            Array.isArray(d.slots) &&
-            d.slots.length > 0
-        );
-
-      /** -----------------------------
-       * FINAL AVAILABILITY FLAG
-       * ----------------------------- */
-      const hasAvailability =
-        hasDateSlots || hasWeeklyAvailability || hasDateAvailability;
-
-      return {
-        ...doctor,
-        hasAvailability, // ✅ frontend + other routes can rely on this
-      };
+    // Sort by nextSlot ascending (earliest slots first)
+    enrichedDoctors.sort((a, b) => {
+      const timeA = a.nextSlot?.dateTime?.getTime() || Number.MAX_VALUE;
+      const timeB = b.nextSlot?.dateTime?.getTime() || Number.MAX_VALUE;
+      return timeA - timeB;
     });
 
     res.status(200).json({

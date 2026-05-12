@@ -9,7 +9,7 @@ import Employee  from "../models/Employee.js";
 import BtoDoctor from "../models/btocDoctor.js";
 import Booking   from "../models/Booking.js";
 import { authEmployee } from "../middlewares/authEmployee.js";
-import { buildAvailabilityMap } from "../utils/timeUtils.js";
+import { buildAvailabilityMap, getNextSlot } from "../utils/timeUtils.js";
 import { sendBookingConfirmation } from "../services/whatsapp.service.js";
 import { notifyDoctorByEmail } from "../utils/notifyDoctor.js";
 
@@ -185,6 +185,8 @@ router.get("/therapists", authEmployee, async (req, res) => {
               nextSlot = {
                 date,
                 time: startTime,
+                dateTime: slotDateTime.toDate(),
+                dateTimeISO: slotDateTime.toISOString()
               };
 
               break;
@@ -221,9 +223,20 @@ router.get("/therapists", authEmployee, async (req, res) => {
       })
     );
 
+    // ✅ Filter therapists with available slots and sort by nextSlot
+    const availableTherapists = therapists.filter(
+      (t) => t.nextSlot !== null
+    );
+
+    availableTherapists.sort((a, b) => {
+      const timeA = a.nextSlot?.dateTime?.getTime() || Number.MAX_VALUE;
+      const timeB = b.nextSlot?.dateTime?.getTime() || Number.MAX_VALUE;
+      return timeA - timeB;
+    });
+
     res.json({
       success: true,
-      data: therapists,
+      data: availableTherapists,
     });
   } catch (err) {
     console.error(

@@ -9,6 +9,13 @@
  *   - India routes continue to work unchanged — this file is purely additive.
  */
 
+import dayjs from "dayjs";
+import utc from "dayjs/plugin/utc.js";
+import timezone from "dayjs/plugin/timezone.js";
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
+
 /**
  * Convert an IST date+time string into any target IANA timezone.
  * 
@@ -287,4 +294,99 @@ export function buildAvailabilityMap(doctor) {
   }
 
   return result;
+}
+
+/**
+ * Calculate the next available slot for a doctor with proper filtering.
+ * Considers availability, booked slots, and 4-hour buffer rule.
+ * 
+ * @param {Object} doctor - Doctor document
+ * @param {string} doctorId - Doctor's ID (optional, for querying bookings)
+ * @param {Object} Booking - Booking model (optional, for fetching booked slots)
+ * @returns {Promise<{date: string, time: string, dateTime: Date}|null>}
+ */
+export async function getNextSlot(doctor, doctorId, Booking) {
+  try {
+    if (!doctor) return null;
+
+    const IST = "Asia/Kolkata";
+    
+    // Get availability using doctor's methods
+    let availability = {};
+    if (typeof doctor.getUpcomingAvailability === "function") {
+      availability = doctor.getUpcomingAvailability(30) || {};
+    } else if (typeof doctor.getUpcomingAvailability45 === "function") {
+      availability = doctor.getUpcomingAvailability45(30) || {};
+    } else {
+      availability = buildAvailabilityMap(doctor) || {};
+    }
+
+    // Get booked slots if Booking model provided
+    let bookedSet = new Set();
+    if (Booking && doctorId) {
+      const bookedBookings = await Booking.find({
+        doctorId,
+        status: { $ne: "cancelled" }
+      }).select("date slot").lean();
+      
+      bookedSet = new Set(
+        bookedBookings.map(b => `${b.date}|${b.slot}`)
+      );
+    }
+
+    // Current time + 4 hour buffer (IST)
+    const nowPlusBuffer = dayjs().tz(IST).add(4, "hour");
+
+    // Loop through availability to find first free slot
+    const sortedDates = Object.keys(availability).sort();
+    
+    for (const date of sortedDates) {
+      const slots = availability[date] || [];
+      
+      for (const slot of slots) {
+        // Normalize slot format
+        const slotStr = typeof slot === "string" 
+          ? slot.trim()
+          : `${slot.startTime} - ${slot.endTime}`;
+
+        // Skip if already booked
+        if (bookedSet.has(`${date}|${slotStr}`)) {
+          continue;
+        }
+
+        // Extract start time
+        const startTime = slotStr.split(" - ")[0].trim();
+        
+        // Parse slot datetime in IST
+        const slotDateTime = dayjs.tz(
+          `${date} ${startTime}`,
+          "YYYY-MM-DD HH:mm",
+          IST
+        );
+
+        if (!slotDateTime.isValid()) {
+          continue;
+        }
+
+        // Skip slots before now + 4 hours
+        if (slotDateTime.isBefore(nowPlusBuffer)) {
+          continue;
+        }
+
+        // Found valid slot!
+        return {
+          date,
+          time: startTime,
+          dateTime: slotDateTime.toDate(),
+          dateTimeISO: slotDateTime.toISOString()
+        };
+      }
+    }
+
+    // No available slots found
+    return null;
+  } catch (err) {
+    console.error("Error calculating next slot:", err);
+    return null;
+  }
 }
