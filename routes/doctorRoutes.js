@@ -326,22 +326,35 @@ router.get("/all", async (req, res) => {
     );
 
     // Filter doctors with available slots
-    const doctorsWithAvailability = doctorsWithSlots.filter(
-      (d) => d.nextSlot !== null
-    );
+// Sort doctors:
+// 1. Doctors with slots first
+// 2. Earliest slot first
+// 3. Doctors without slots at the end
 
-    // Sort by nextSlot ascending (earliest slots first)
-    doctorsWithAvailability.sort((a, b) => {
-      const timeA = a.nextSlot?.dateTime?.getTime() || Number.MAX_VALUE;
-      const timeB = b.nextSlot?.dateTime?.getTime() || Number.MAX_VALUE;
-      return timeA - timeB;
-    });
 
-    res.status(200).json({
-      success: true,
-      count: doctorsWithAvailability.length,
-      data: doctorsWithAvailability
-    });
+doctorsWithSlots.sort((a, b) => {
+  const hasSlotA = !!a.nextSlot;
+  const hasSlotB = !!b.nextSlot;
+
+  // Push unavailable doctors to the end
+  if (hasSlotA && !hasSlotB) return -1;
+  if (!hasSlotA && hasSlotB) return 1;
+
+  // If both have slots, sort by earliest slot
+  if (hasSlotA && hasSlotB) {
+    const timeA = new Date(a.nextSlot.dateTime).getTime();
+    const timeB = new Date(b.nextSlot.dateTime).getTime();
+    return timeA - timeB;
+  }
+
+  return 0;
+});
+
+res.status(200).json({
+  success: true,
+  count: doctorsWithSlots.length,
+  data: doctorsWithSlots
+});
   } catch (error) {
     console.error("❌ Error fetching doctors:", error);
     res.status(500).json({
@@ -390,22 +403,35 @@ router.get("/offer", async (req, res) => {
     );
 
     // Filter doctors with available slots
-    const enrichedDoctors = doctorsWithSlots.filter(
-      (d) => d.hasAvailability
-    );
+// Sort doctors:
+// 1. Doctors with slots first
+// 2. Earliest slot first
+// 3. Doctors without slots at the end
 
-    // Sort by nextSlot ascending (earliest slots first)
-    enrichedDoctors.sort((a, b) => {
-      const timeA = a.nextSlot?.dateTime?.getTime() || Number.MAX_VALUE;
-      const timeB = b.nextSlot?.dateTime?.getTime() || Number.MAX_VALUE;
-      return timeA - timeB;
-    });
+doctorsWithSlots.sort((a, b) => {
+  const hasSlotA = !!a.nextSlot;
+  const hasSlotB = !!b.nextSlot;
 
-    res.status(200).json({
-      success: true,
-      count: enrichedDoctors.length,
-      doctors: enrichedDoctors,
-    });
+  // Available doctors first
+  if (hasSlotA && !hasSlotB) return -1;
+  if (!hasSlotA && hasSlotB) return 1;
+
+  // If both have slots, sort by nearest slot
+  if (hasSlotA && hasSlotB) {
+    const timeA = new Date(a.nextSlot.dateTime).getTime();
+    const timeB = new Date(b.nextSlot.dateTime).getTime();
+
+    return timeA - timeB;
+  }
+
+  return 0;
+});
+
+res.status(200).json({
+  success: true,
+  count: doctorsWithSlots.length,
+  doctors: doctorsWithSlots,
+});
   } catch (error) {
     console.error("Error fetching offer doctors:", error);
     res.status(500).json({
