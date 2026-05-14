@@ -194,6 +194,89 @@ router.post("/paypal/create-order", authEmployee, async (req, res) => {
   }
 });
 
+router.post("/test-booking-flow", authEmployee, async (req, res) => {
+  try {
+    const { bookingPayload } = req.body;
+
+    if (!bookingPayload) {
+      return res.status(400).json({
+        success: false,
+        message: "Booking payload missing",
+      });
+    }
+
+    const doctor = await BtoDoctor.findById(
+      bookingPayload.doctorId
+    );
+
+    if (!doctor) {
+      return res.status(404).json({
+        success: false,
+        message: "Doctor not found",
+      });
+    }
+
+    // Fake booking object
+    const booking = {
+      doctorId: doctor._id,
+      doctorName: doctor.name,
+
+      name: bookingPayload.name,
+      phone: bookingPayload.phone,
+      email: bookingPayload.email,
+
+      // Therapist gets IST
+      date: bookingPayload.istDate,
+      slot: `${bookingPayload.istSlot} IST`,
+
+      // User gets ET
+      caDate: bookingPayload.caDate,
+      caSlot: `${bookingPayload.caSlot} ET`,
+
+      mode: "online_video",
+
+      meetLink:
+        doctor.meetLink ||
+        "https://meet.google.com/test",
+    };
+
+    // EMAIL TO THERAPIST
+    await notifyDoctorByEmail({
+      doctor,
+      booking,
+      employeeName: booking.name,
+    });
+
+    // WHATSAPP TO USER
+    await sendBookingConfirmation(
+      booking.phone,
+      {
+        employeeName: booking.name,
+        doctorName: booking.doctorName,
+
+        // User sees ET
+        date: booking.caDate,
+        time: booking.caSlot,
+
+        meetLink: booking.meetLink,
+      }
+    );
+
+    res.json({
+      success: true,
+      message: "Test notifications sent",
+    });
+
+  } catch (err) {
+    console.error(err);
+
+    res.status(500).json({
+      success: false,
+      message: err.message,
+    });
+  }
+});
+
 // ─── PayPal: Capture + Save Booking ──────────────────────────────────────────
 router.post("/paypal/capture-order", authEmployee, async (req, res) => {
   try {
@@ -236,15 +319,29 @@ router.post("/paypal/capture-order", authEmployee, async (req, res) => {
     });
     await booking.save();
 
-    notifyDoctorByEmail({ doctor, booking, employeeName: booking.name }).catch(() => {});
+    // Therapist is in India → email uses IST.
+    // Client is in Canada → WhatsApp uses the timezone they picked on the platform.
+    const istTime = bookingPayload.istSlot || booking.slot || "";
+    const istSlotLabeled = /IST/i.test(istTime) ? istTime : `${istTime} IST`.trim();
+
+    notifyDoctorByEmail({
+      doctor,
+      booking: {
+        ...booking.toObject(),
+        date: bookingPayload.istDate || booking.date,
+        slot: istSlotLabeled,
+      },
+      employeeName: booking.name,
+    }).catch((e) => console.error("notifyDoctorByEmail error:", e.message));
 
     const toPhone = String(bookingPayload.phone || "").replace(/\D/g, "");
     if (toPhone) {
       try {
+        const caSlotForUser = bookingPayload.caSlot || booking.slot || "";
         await sendBookingConfirmation(toPhone, {
           employeeName: booking.name, doctorName: booking.doctorName,
           date: bookingPayload.caDate || booking.date,
-          time: (bookingPayload.caSlot || booking.slot || "").split(" - ")[0],
+          time: caSlotForUser,
           meetLink: booking.meetLink || null,
         });
         booking.confirmationSent = true;
