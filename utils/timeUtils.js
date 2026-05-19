@@ -155,7 +155,7 @@ export function convertAvailabilityToTimezone(availability, targetTZ) {
 //   return result;
 // }
 
-export function buildAvailabilityMap(doctor) {
+export function buildAvailabilityMap(doctor, bookedStartSet = null) {
   const toMinutes = (t) => {
     const [h, m] = t.split(":").map(Number);
     return h * 60 + m;
@@ -194,8 +194,16 @@ export function buildAvailabilityMap(doctor) {
     return slots;
   };
 
-  // ✅ moved outside loop
+  const effectiveBookedSet =
+    bookedStartSet instanceof Set
+      ? bookedStartSet
+      : doctor.__bookedSet instanceof Set
+      ? doctor.__bookedSet
+      : null;
   const isBookedSlot = (date, slotStartTime) => {
+    if (effectiveBookedSet) {
+      return effectiveBookedSet.has(`${date}|${slotStartTime}`);
+    }
     return (doctor.bookedSlots || []).some((b) => {
       return (
         b.date === date &&
@@ -226,33 +234,49 @@ export function buildAvailabilityMap(doctor) {
 
     const isToday = dateStr === todayStr;
 
-    // Date-specific rule
-    const dateRule = (doctor.dateAvailability || []).find(
+    // Date-specific rules — there may be MORE than one entry per date
+    // (e.g. an evening 17:30–23:59 window + a next-morning 00:00–08:30 window
+    // stored under that next date). Process all of them and merge their slots.
+    const dateRules = (doctor.dateAvailability || []).filter(
       (da) => da.date === dateStr && da.isActive
     );
 
-    if (dateRule) {
-      let slots = buildSlots(dateRule);
+    if (dateRules.length > 0) {
+      const allSlots = [];
+      for (const dateRule of dateRules) {
+        let slots = buildSlots(dateRule);
 
-      slots = slots.filter((slot) => {
-        // remove past slots
-        if (
-          isToday &&
-          toMinutes(slot.startTime) <= nowMinutes
-        ) {
-          return false;
-        }
+        slots = slots.filter((slot) => {
+          // remove past slots
+          if (
+            isToday &&
+            toMinutes(slot.startTime) <= nowMinutes
+          ) {
+            return false;
+          }
 
-        // remove booked slots
-        if (isBookedSlot(dateStr, slot.startTime)) {
-          return false;
-        }
+          // remove booked slots
+          if (isBookedSlot(dateStr, slot.startTime)) {
+            return false;
+          }
 
-        return true;
-      });
+          return true;
+        });
 
-      if (slots.length) {
-        result[dateStr] = slots;
+        allSlots.push(...slots);
+      }
+
+      // Deduplicate by startTime and sort
+      const seen = new Set();
+      const merged = [];
+      for (const s of allSlots.sort((a, b) => toMinutes(a.startTime) - toMinutes(b.startTime))) {
+        if (seen.has(s.startTime)) continue;
+        seen.add(s.startTime);
+        merged.push(s);
+      }
+
+      if (merged.length) {
+        result[dateStr] = merged;
       }
 
       continue;
@@ -305,12 +329,32 @@ export function buildAvailabilityMap(doctor) {
  * @param {Object} Booking - Booking model (optional, for fetching booked slots)
  * @returns {Promise<{date: string, time: string, dateTime: Date}|null>}
  */
-export async function getNextSlot(doctor, doctorId, Booking) {
+export async function getNextSlot(doctor, doctorId, Booking, bufferHours = 4) {
   try {
     if (!doctor) return null;
 
     const IST = "Asia/Kolkata";
-    
+
+    // Get booked slots first so buildAvailabilityMap can filter them
+    let bookedSet = new Set();
+    let bookedStartSet = new Set();
+    if (Booking && doctorId) {
+      const bookedBookings = await Booking.find({
+        doctorId,
+        status: { $ne: "cancelled" }
+      }).select("date slot").lean();
+
+      bookedSet = new Set(
+        bookedBookings.map(b => `${b.date}|${b.slot}`)
+      );
+      bookedStartSet = new Set(
+        bookedBookings.map(b => {
+          const start = String(b.slot || "").trim().split(" - ")[0].trim();
+          return `${b.date}|${start}`;
+        })
+      );
+    }
+
     // Get availability using doctor's methods
     let availability = {};
     if (typeof doctor.getUpcomingAvailability === "function") {
@@ -318,24 +362,11 @@ export async function getNextSlot(doctor, doctorId, Booking) {
     } else if (typeof doctor.getUpcomingAvailability45 === "function") {
       availability = doctor.getUpcomingAvailability45(30) || {};
     } else {
-      availability = buildAvailabilityMap(doctor) || {};
+      availability = buildAvailabilityMap(doctor, bookedStartSet) || {};
     }
 
-    // Get booked slots if Booking model provided
-    let bookedSet = new Set();
-    if (Booking && doctorId) {
-      const bookedBookings = await Booking.find({
-        doctorId,
-        status: { $ne: "cancelled" }
-      }).select("date slot").lean();
-      
-      bookedSet = new Set(
-        bookedBookings.map(b => `${b.date}|${b.slot}`)
-      );
-    }
-
-    // Current time + 4 hour buffer (IST)
-    const nowPlusBuffer = dayjs().tz(IST).add(4, "hour");
+    // Current time + buffer (IST)
+    const nowPlusBuffer = dayjs().tz(IST).add(bufferHours, "hour");
 
     // Loop through availability to find first free slot
     const sortedDates = Object.keys(availability).sort();
@@ -345,17 +376,20 @@ export async function getNextSlot(doctor, doctorId, Booking) {
       
       for (const slot of slots) {
         // Normalize slot format
-        const slotStr = typeof slot === "string" 
+        const slotStr = typeof slot === "string"
           ? slot.trim()
           : `${slot.startTime} - ${slot.endTime}`;
 
-        // Skip if already booked
-        if (bookedSet.has(`${date}|${slotStr}`)) {
-          continue;
-        }
-
         // Extract start time
         const startTime = slotStr.split(" - ")[0].trim();
+
+        // Skip if already booked (match by full slot OR start time alone)
+        if (
+          bookedSet.has(`${date}|${slotStr}`) ||
+          bookedStartSet.has(`${date}|${startTime}`)
+        ) {
+          continue;
+        }
         
         // Parse slot datetime in IST
         const slotDateTime = dayjs.tz(

@@ -290,18 +290,26 @@ router.get("/therapists/:doctorId", authEmployee, async (req, res) => {
 
     const availability = buildAvailabilityMap(doctor);
 
-    // Load booked bookings
+    // Load booked bookings — count ANY active booking for this doctor
+    // (CA, India, or other companies) so a slot booked anywhere disappears
+    // everywhere. Status "cancelled" is excluded.
+const todayForBookings = dayjs().tz(IST).format("YYYY-MM-DD");
 const bookedBookings = await Booking.find({
   doctorId: doctor._id,
-  companyId: company._id,
-  status: "booked",
+  status: { $ne: "cancelled" },
+  date: { $gte: todayForBookings },
 })
   .select("date slot")
   .lean();
 
-// Create lookup set
+// Build lookup sets keyed by full slot string AND by start time alone,
+// because CA bookings store slot as "17:30 - 18:15 IST" while company
+// bookings may store just "17:30 - 18:15".
 const bookedSet = new Set(
   bookedBookings.map((b) => `${b.date}|${b.slot}`)
+);
+const bookedStartSet = new Set(
+  bookedBookings.map((b) => `${b.date}|${String(b.slot || "").trim().split(" - ")[0].trim()}`)
 );
 
 const todayStr = dayjs()
@@ -322,8 +330,12 @@ for (const [date, slots] of Object.entries(
     const slotStr =
       `${slot.startTime} - ${slot.endTime}`;
 
-    // Remove booked slots
-    if (bookedSet.has(`${date}|${slotStr}`)) {
+    // Remove booked slots — match either the full slot string OR just the
+    // start time (handles "17:30 - 18:15 IST" vs "17:30 - 18:15" inconsistency).
+    if (
+      bookedSet.has(`${date}|${slotStr}`) ||
+      bookedStartSet.has(`${date}|${slot.startTime}`)
+    ) {
       return false;
     }
 

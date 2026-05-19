@@ -1,5 +1,8 @@
 import express from "express";
 import crypto from "crypto";
+import dayjs from "dayjs";
+import utc from "dayjs/plugin/utc.js";
+import timezone from "dayjs/plugin/timezone.js";
 import BtoDoctor from "../models/btocDoctor.js";
 import CaTherapist from "../models/CaTherapist.js";
 import Booking from "../models/Booking.js";
@@ -11,6 +14,12 @@ import { notifyDoctorByEmail } from "../utils/notifyDoctor.js";
 import { convertAvailabilityToTimezone, buildAvailabilityMap, getNextSlot } from "../utils/timeUtils.js";
 import { createPayPalOrder, capturePayPalOrder } from "../config/paypal.js";
 import { authEmployee } from "../middlewares/authEmployee.js";
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
+
+const IST = "Asia/Kolkata";
+const CA_BOOKING_BUFFER_HOURS = 24;
 
 const router = express.Router();
 
@@ -49,12 +58,12 @@ router.get("/therapists", async (req, res) => {
   try {
     const caEntries = await CaTherapist.find({ isActive: true }).populate("doctorId");
     
-    // Calculate nextSlot for each therapist
+    // Calculate nextSlot for each therapist (24h buffer for CA)
     const therapistsWithSlots = await Promise.all(
       caEntries
         .filter((e) => e.doctorId)
         .map(async (e) => {
-          const nextSlot = await getNextSlot(e.doctorId, e.doctorId._id, Booking);
+          const nextSlot = await getNextSlot(e.doctorId, e.doctorId._id, Booking, CA_BOOKING_BUFFER_HOURS);
           return { ...e.toObject(), nextSlot };
         })
     );
@@ -119,9 +128,33 @@ router.get("/therapists/:doctorId/availability", async (req, res) => {
     const caEntry = await CaTherapist.findOne({ doctorId: req.params.doctorId, isActive: true }).populate("doctorId");
     if (!caEntry?.doctorId) return res.status(404).json({ success: false, message: "Therapist not found" });
     const targetTZ = req.query.tz || caEntry.displayTimezone || "America/Toronto";
-    const istAvailability = buildAvailabilityMap(caEntry.doctorId);
+
+    // Fetch existing bookings so booked slots get filtered out of the IST map.
+    const todayStr = dayjs().tz(IST).format("YYYY-MM-DD");
+    const bookings = await Booking.find({
+      doctorId: caEntry.doctorId._id,
+      status: { $ne: "cancelled" },
+      date: { $gte: todayStr },
+    }).select("date slot").lean();
+    const bookedStartSet = new Set(
+      bookings.map((b) => `${b.date}|${String(b.slot || "").trim().split(" - ")[0].trim()}`)
+    );
+
+    const istAvailability = buildAvailabilityMap(caEntry.doctorId, bookedStartSet);
+
     const caAvailability  = convertAvailabilityToTimezone(istAvailability, targetTZ);
-    res.json({ success: true, timezone: targetTZ, data: caAvailability });
+
+    const cutoff = dayjs().tz(IST).add(CA_BOOKING_BUFFER_HOURS, "hour");
+    const filtered = {};
+    for (const [date, slots] of Object.entries(caAvailability)) {
+      const kept = slots.filter((s) => {
+        const slotIST = dayjs.tz(`${s.istDate} ${s.startTimeIST}`, "YYYY-MM-DD HH:mm", IST);
+        return slotIST.isValid() && !slotIST.isBefore(cutoff);
+      });
+      if (kept.length) filtered[date] = kept;
+    }
+
+    res.json({ success: true, timezone: targetTZ, data: filtered });
   } catch (err) {
     console.error("CA availability error:", err);
     res.status(500).json({ success: false, message: "Server error" });
@@ -162,8 +195,33 @@ router.get("/validate-referral/:code", async (req, res) => {
 // ─── PayPal: Create Order ─────────────────────────────────────────────────────
 router.post("/paypal/create-order", authEmployee, async (req, res) => {
   try {
-    const { doctorId, employeeId } = req.body;
+    const { doctorId, employeeId, istDate, istSlot } = req.body;
     if (!doctorId || !employeeId) return res.status(400).json({ success: false, message: "doctorId and employeeId required" });
+
+    // Early 24h check — refuse to create a PayPal order for a stale slot.
+    // istDate/istSlot are optional for backward compatibility, but recommended.
+    if (istDate && istSlot) {
+      const istStart = String(istSlot || "").trim().split(" - ")[0].trim();
+      const slotIST = dayjs.tz(`${istDate} ${istStart}`, "YYYY-MM-DD HH:mm", IST);
+      const cutoff = dayjs().tz(IST).add(CA_BOOKING_BUFFER_HOURS, "hour");
+      if (!slotIST.isValid() || slotIST.isBefore(cutoff)) {
+        return res.status(400).json({ success: false, message: "This slot is no longer bookable (within 24-hour window)." });
+      }
+
+      // Also early-check for double booking to avoid charging the user.
+      const collision = await Booking.findOne({
+        doctorId,
+        date: istDate,
+        status: { $ne: "cancelled" },
+        $or: [
+          { slot: istSlot },
+          { slot: { $regex: `^${istStart.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b` } },
+        ],
+      }).lean();
+      if (collision) {
+        return res.status(409).json({ success: false, message: "This slot has just been booked by someone else." });
+      }
+    }
 
     const doctor = await BtoDoctor.findById(doctorId);
     if (!doctor) return res.status(404).json({ success: false, message: "Doctor not found" });
@@ -194,7 +252,11 @@ router.post("/paypal/create-order", authEmployee, async (req, res) => {
   }
 });
 
-router.post("/test-booking-flow", authEmployee, async (req, res) => {
+router.post("/test-booking-flow", adminAuth, async (req, res) => {
+  // Disabled outside of explicit test mode to prevent spam to admins.
+  if (process.env.ENABLE_CA_TEST_BOOKING !== "true") {
+    return res.status(403).json({ success: false, message: "Test endpoint disabled" });
+  }
   try {
     const { bookingPayload } = req.body;
 
@@ -240,11 +302,15 @@ router.post("/test-booking-flow", authEmployee, async (req, res) => {
         "https://meet.google.com/test",
     };
 
-    // EMAIL TO THERAPIST
+    // EMAIL TO TEAM (CA bookings skip the therapist's inbox)
     await notifyDoctorByEmail({
       doctor,
       booking,
       employeeName: booking.name,
+      isCaBooking: true,
+      caDate: bookingPayload.caDate,
+      caSlot: bookingPayload.caSlot,
+      caTimezoneLabel: bookingPayload.caTzAbbr || "ET",
     });
 
     // WHATSAPP TO USER
@@ -282,6 +348,31 @@ router.post("/paypal/capture-order", authEmployee, async (req, res) => {
   try {
     const { orderID, bookingPayload } = req.body;
     if (!orderID || !bookingPayload) return res.status(400).json({ success: false, message: "Missing data" });
+
+    // ── Guard 1: enforce 24h booking buffer (IST) on the server side ──────────
+    const istStart = String(bookingPayload.istSlot || "").trim().split(" - ")[0].trim();
+    const slotIST = dayjs.tz(`${bookingPayload.istDate} ${istStart}`, "YYYY-MM-DD HH:mm", IST);
+    const cutoff = dayjs().tz(IST).add(CA_BOOKING_BUFFER_HOURS, "hour");
+    if (!slotIST.isValid() || slotIST.isBefore(cutoff)) {
+      return res.status(400).json({ success: false, message: "This slot is no longer bookable (within 24-hour window)." });
+    }
+
+    // ── Guard 2: refuse if another booking already holds this slot ────────────
+    const doctorId = bookingPayload.doctorId;
+    const slotKeyFull = bookingPayload.istSlot;
+    const escapedStart = istStart.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const existing = await Booking.findOne({
+      doctorId,
+      date: bookingPayload.istDate,
+      status: { $ne: "cancelled" },
+      $or: [
+        { slot: slotKeyFull },
+        { slot: { $regex: `^${escapedStart}\\b` } },
+      ],
+    }).lean();
+    if (existing) {
+      return res.status(409).json({ success: false, message: "This slot has just been booked by someone else." });
+    }
 
     const capture = await capturePayPalOrder(orderID);
     if (capture.status !== "COMPLETED") return res.status(400).json({ success: false, message: `PayPal status: ${capture.status}` });
@@ -332,6 +423,10 @@ router.post("/paypal/capture-order", authEmployee, async (req, res) => {
         slot: istSlotLabeled,
       },
       employeeName: booking.name,
+      isCaBooking: true,
+      caDate: bookingPayload.caDate,
+      caSlot: bookingPayload.caSlot,
+      caTimezoneLabel: bookingPayload.caTzAbbr || "ET",
     }).catch((e) => console.error("notifyDoctorByEmail error:", e.message));
 
     const toPhone = String(bookingPayload.phone || "").replace(/\D/g, "");

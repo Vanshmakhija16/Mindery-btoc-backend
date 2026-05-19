@@ -17,6 +17,9 @@ export async function getPayPalAccessToken() {
   const clientId = process.env.PAYPAL_CLIENT_ID;
   const secret   = process.env.PAYPAL_SECRET;
 
+    console.log("BACKEND CLIENT:", clientId);
+  console.log("BACKEND SECRET STARTS:", secret?.slice(0, 5));
+  
   if (!clientId || !secret) {
     throw new Error("PAYPAL_CLIENT_ID or PAYPAL_SECRET missing from .env");
   }

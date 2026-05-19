@@ -18,7 +18,11 @@ logs/
 .DS_Store
 Thumbs.db
 
-# files 
+# files
 
 credentials.json
 token.json
+
+# local seed / debug scripts
+seed/_checkAvailability.js
+seed/seedDoctorAvailabilityIST.js
